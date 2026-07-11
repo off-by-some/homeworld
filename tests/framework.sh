@@ -37,12 +37,16 @@ assert_0() {
     fi
 }
 
-# assert_nonzero exit_code [label] — the previous command must have failed
+# assert_nonzero exit_code [label] — the previous command must have failed.
+# Exit code 127 (command not found) is treated as a test infrastructure failure,
+# not a valid domain failure, so it always fails the assertion.
 assert_nonzero() {
-    if [ "$1" != "0" ]; then
-        ok "${2:-failed as expected}"
-    else
+    if [ "$1" = "0" ]; then
         fail "${2:-should have failed}: got exit code 0"
+    elif [ "$1" = "127" ]; then
+        fail "${2:-should have failed}: command not found (127) — function may not be defined"
+    else
+        ok "${2:-failed as expected}"
     fi
 }
 

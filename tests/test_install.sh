@@ -4,9 +4,10 @@
 # These call the homeworld binary as a subprocess with isolated XDG directories.
 # Run the bootstrap installer before running this file.
 
-# Verify homeworld is installed before starting
+# Verify the homeworld binary is reachable (either installed or the source-tree
+# bin/ was added to PATH by run.sh).
 if ! command -v homeworld >/dev/null 2>&1; then
-    printf 'SKIP: homeworld binary not found — run install.sh first\n' >&2
+    printf 'SKIP: homeworld binary not found\n' >&2
     return 0
 fi
 

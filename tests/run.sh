@@ -5,15 +5,27 @@
 #   sh tests/run.sh                 — run all test files
 #   sh tests/run.sh test_core.sh   — run one specific file
 #
-# The runner sources the homeworld library directly so unit test files can call
-# library functions without going through the CLI binary. Integration tests
-# (test_install.sh) invoke the binary as a subprocess and require it to be
-# installed on PATH first (run homeworld/install.sh).
+# The homeworld lib is written for Bash 3.2+. Re-exec with bash if we were
+# invoked by a POSIX sh (e.g. /bin/sh on macOS) so the library parses cleanly.
+if [ -z "${BASH_VERSION:-}" ]; then
+    command -v bash >/dev/null 2>&1 || {
+        printf 'homeworld tests require Bash 3.2 or newer\n' >&2
+        exit 1
+    }
+    exec bash "$0" "$@"
+fi
 
 set -u
 
 _TESTS_DIR=$(cd "$(dirname "$0")" && pwd)
 _LIB_DIR=$(cd "$_TESTS_DIR/../lib/homeworld" && pwd)
+
+# If homeworld is not already on PATH, add the source-tree bin/ so that
+# test_install.sh can run integration tests without a prior global install.
+if ! command -v homeworld >/dev/null 2>&1; then
+    PATH="$_TESTS_DIR/../bin:$PATH"
+    export PATH
+fi
 
 # Source the library. core.sh runs the color-init block at load time, which
 # makes the _HW_C_* variables available to the framework and test files.
