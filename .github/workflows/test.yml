@@ -1,0 +1,46 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  linux:
+    name: "${{ matrix.distro }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: arch
+            dockerfile: .github/docker/Dockerfile.arch
+          - distro: debian
+            dockerfile: .github/docker/Dockerfile.debian
+          - distro: ubuntu
+            dockerfile: .github/docker/Dockerfile.ubuntu
+          - distro: fedora
+            dockerfile: .github/docker/Dockerfile.fedora
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test (${{ matrix.distro }})
+        run: docker build -f ${{ matrix.dockerfile }} .
+
+  macos:
+    name: macos
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install git ncurses
+
+      - name: Install homeworld
+        run: sh install.sh
+
+      - name: Run full test suite
+        run: sh tests/run.sh

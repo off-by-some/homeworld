@@ -1,0 +1,7 @@
+FROM archlinux:latest
+RUN pacman -Syu --noconfirm git ncurses
+ENV PATH="/root/.local/bin:$PATH"
+WORKDIR /homeworld
+COPY . .
+RUN sh install.sh
+RUN sh tests/run.sh

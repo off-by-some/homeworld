@@ -16,7 +16,7 @@ Homeworld is the executor of the module graph, not a node within it. The provisi
 ## Install
 
 ```sh
-curl -fsSL <install-url> | sh
+curl -fsSL https://raw.githubusercontent.com/off-by-some/homeworld/refs/heads/main/install.sh | sh
 ```
 
 This installs `~/.local/bin/homeworld` independently. It is not part of any provisioning source and is never replaced by a module installation.

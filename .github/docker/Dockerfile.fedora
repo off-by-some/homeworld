@@ -1,0 +1,7 @@
+FROM fedora:latest
+RUN dnf install -y git ncurses && dnf clean all
+ENV PATH="/root/.local/bin:$PATH"
+WORKDIR /homeworld
+COPY . .
+RUN sh install.sh
+RUN sh tests/run.sh
