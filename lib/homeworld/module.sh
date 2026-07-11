@@ -62,11 +62,11 @@ hw_module_load() {
                 HOMEWORLD_DEPENDS | \
                 HOMEWORLD_AUTO_INSTALL | \
                 HOMEWORLD_REQUIRES)
-                    ;; # known manifest field, skip
+                    : ;; # known manifest field, skip
                 *)
                     # Skip if it was already present before we sourced the manifest
                     case " $_pre_hw " in
-                        *" $_env_key "*) ;;  # pre-existing, not from manifest
+                        *" $_env_key "*) : ;;  # pre-existing, not from manifest
                         *)
                             printf 'UNKNOWN=%s\n' "$_env_key"
                             ;;

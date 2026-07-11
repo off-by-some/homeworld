@@ -30,7 +30,7 @@ hw_config_link() {
 
     # Check the dest is absolute — we're creating a real filesystem link
     case "$_hcl_dest" in
-        /*) ;;
+        /*) : ;;
         *)  hw_die "config link destination must be an absolute path: '$_hcl_dest'" \
                    "Use a full path like \"\$HOME/.config/myfile\" rather than a relative one." ;;
     esac
@@ -93,7 +93,7 @@ hw_config_activate() {
             # It's a symlink; check if it points inside HW_DATA (managed) or elsewhere
             _hca_existing=$(readlink "$_hca_dest")
             case "$_hca_existing" in
-                "$HW_DATA"*) ;; # managed by homeworld, ok to update
+                "$HW_DATA"*) : ;; # managed by homeworld, ok to update
                 *)
                     hw_die "config destination '$_hca_dest' points to an unmanaged path — homeworld will not overwrite it" \
                            "Remove the symlink manually and re-run 'homeworld install': rm '$_hca_dest'"
