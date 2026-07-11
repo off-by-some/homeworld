@@ -53,20 +53,22 @@ hw_module_load() {
 
         # Report any HOMEWORLD_* vars that appeared after sourcing and were
         # not already present in the environment before sourcing.
-        set | grep '^HOMEWORLD_' | cut -d= -f1 | while read -r _env_key; do
+        # Use a for loop (not pipe+while) to avoid parser issues in bash 3.2.
+        # 'continue' is used as a non-empty command before ';;' because bash 3.2
+        # rejects empty case arms (just ';;' with no preceding command).
+        _post_hw=$(set | grep '^HOMEWORLD_' | cut -d= -f1 | tr '\n' ' ')
+        for _env_key in $_post_hw; do
             case " $_HW_MODULE_KNOWN_FIELDS " in
                 *" $_env_key "*)
-                    ;;
-                *)
-                    case " $_pre_hw " in
-                        *" $_env_key "*)
-                            ;;
-                        *)
-                            printf 'UNKNOWN=%s\n' "$_env_key"
-                            ;;
-                    esac
+                    continue
                     ;;
             esac
+            case " $_pre_hw " in
+                *" $_env_key "*)
+                    continue
+                    ;;
+            esac
+            printf 'UNKNOWN=%s\n' "$_env_key"
         done
     ) || {
         hw_die "could not load module manifest: $_hml_manifest" \
