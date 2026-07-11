@@ -54,19 +54,13 @@ hw_module_load() {
         # Report any HOMEWORLD_* vars that appeared after sourcing and were
         # not already present in the environment before sourcing.
         set | grep '^HOMEWORLD_' | cut -d= -f1 | while read -r _env_key; do
-            case "$_env_key" in
-                HOMEWORLD_MODULE_NAME | \
-                HOMEWORLD_DESCRIPTION | \
-                HOMEWORLD_PLATFORMS | \
-                HOMEWORLD_DISTROS | \
-                HOMEWORLD_DEPENDS | \
-                HOMEWORLD_AUTO_INSTALL | \
-                HOMEWORLD_REQUIRES)
-                    : ;; # known manifest field, skip
+            # Skip if this is a known manifest field (word-match against the list)
+            case " $_HW_MODULE_KNOWN_FIELDS " in
+                *" $_env_key "*) : ;; # known manifest field, skip
                 *)
                     # Skip if it was already present before we sourced the manifest
                     case " $_pre_hw " in
-                        *" $_env_key "*) : ;;  # pre-existing, not from manifest
+                        *" $_env_key "*) : ;; # pre-existing, not from manifest
                         *)
                             printf 'UNKNOWN=%s\n' "$_env_key"
                             ;;
