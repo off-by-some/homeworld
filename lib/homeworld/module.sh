@@ -53,22 +53,19 @@ hw_module_load() {
 
         # Report any HOMEWORLD_* vars that appeared after sourcing and were
         # not already present in the environment before sourcing.
-        # Use a for loop (not pipe+while) to avoid parser issues in bash 3.2.
-        # 'continue' is used as a non-empty command before ';;' because bash 3.2
-        # rejects empty case arms (just ';;' with no preceding command).
+        # Bash 3.2 rejects case arms with control-flow statements (continue,
+        # break) inside $() substitutions, so we use if/grep for membership
+        # testing instead of case patterns.
         _post_hw=$(set | grep '^HOMEWORLD_' | cut -d= -f1 | tr '\n' ' ')
         for _env_key in $_post_hw; do
-            case " $_HW_MODULE_KNOWN_FIELDS " in
-                *" $_env_key "*)
-                    continue
-                    ;;
-            esac
-            case " $_pre_hw " in
-                *" $_env_key "*)
-                    continue
-                    ;;
-            esac
-            printf 'UNKNOWN=%s\n' "$_env_key"
+            _is_known=0
+            printf '%s\n' $_HW_MODULE_KNOWN_FIELDS | grep -qx "$_env_key" && _is_known=1
+            if [ "$_is_known" = "0" ]; then
+                printf '%s\n' $_pre_hw | grep -qx "$_env_key" && _is_known=1
+            fi
+            if [ "$_is_known" = "0" ]; then
+                printf 'UNKNOWN=%s\n' "$_env_key"
+            fi
         done
     ) || {
         hw_die "could not load module manifest: $_hml_manifest" \
