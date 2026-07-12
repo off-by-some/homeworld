@@ -410,6 +410,9 @@ cmd_install() {
     hw_log ""
     hw_log "Building generation $(basename "$_ci_gen")..."
 
+    # Seed and update git-repo assets from the previous generation
+    hw_seed_git_assets "$_ci_gen"
+
     # Install each module in sorted order
     for _ci_n in $_ci_sorted; do
         hw_install_module "$_ci_moddir" "$_ci_n" "$_ci_gen" "$_ci_platform" "${_ci_distro:-}"

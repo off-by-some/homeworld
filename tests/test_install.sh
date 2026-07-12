@@ -276,3 +276,118 @@ assert_0 $? "init succeeds with spaces in config dest"
 _dest="$_T_XDG/home/.config/my config file"
 [ -L "$_dest" ]; assert_0 $? "symlink created at path with spaces"
 teardown_cli_env
+
+section "git asset seeding — cloned by install.sh on first install"
+
+setup_cli_env
+_fix="$_T_TMP/source"
+make_module "$_fix" "root"
+_upstream="$_T_TMP/upstream"
+make_git_repo "$_upstream"
+
+# install.sh clones on first run; homeworld path asset resolves to pending gen
+cat > "$_fix/install.sh" << INSTALLSCRIPT
+#!/bin/sh
+dest="\$(homeworld path asset myrepo)"
+[ -d "\$dest" ] || git clone "$_upstream" "\$dest" 2>/dev/null
+INSTALLSCRIPT
+
+hw_cli init "$_fix" 2>/dev/null
+assert_0 $? "init exits 0"
+
+_hd=$(hw_data_dir)
+_cur=$(readlink "$_hd/current")
+assert_dir  "$_cur/assets/myrepo"          "git asset directory present in generation"
+assert_file "$_cur/assets/myrepo/file.txt" "cloned asset contains expected file"
+assert_dir  "$_cur/assets/myrepo/.git"     "cloned asset is a git repository"
+
+teardown_cli_env
+
+section "git asset seeding — seeded from previous generation on reinstall"
+
+setup_cli_env
+_fix="$_T_TMP/source"
+make_module "$_fix" "root"
+_upstream="$_T_TMP/upstream"
+make_git_repo "$_upstream"
+
+cat > "$_fix/install.sh" << INSTALLSCRIPT
+#!/bin/sh
+dest="\$(homeworld path asset myrepo)"
+[ -d "\$dest" ] || git clone "$_upstream" "\$dest" 2>/dev/null
+INSTALLSCRIPT
+
+hw_cli init "$_fix" 2>/dev/null
+
+_hd=$(hw_data_dir)
+_gen1=$(readlink "$_hd/current")
+
+# Second install — seeding carries the asset into the new generation
+hw_cli install 2>/dev/null
+assert_0 $? "second install exits 0"
+
+_gen2=$(readlink "$_hd/current")
+[ "$_gen1" != "$_gen2" ]; assert_0 $? "new generation created"
+assert_dir  "$_gen2/assets/myrepo"          "git asset present in new generation"
+assert_file "$_gen2/assets/myrepo/file.txt" "seeded asset retains expected file"
+assert_dir  "$_gen2/assets/myrepo/.git"     "seeded asset remains a git repository"
+
+teardown_cli_env
+
+section "git asset seeding — seeded asset updated via git pull"
+
+setup_cli_env
+_fix="$_T_TMP/source"
+make_module "$_fix" "root"
+_upstream="$_T_TMP/upstream"
+make_git_repo "$_upstream"
+
+cat > "$_fix/install.sh" << INSTALLSCRIPT
+#!/bin/sh
+dest="\$(homeworld path asset myrepo)"
+[ -d "\$dest" ] || git clone "$_upstream" "\$dest" 2>/dev/null
+INSTALLSCRIPT
+
+hw_cli init "$_fix" 2>/dev/null
+
+# Add a new commit to upstream after the first install
+git_commit "$_upstream" "newfile.txt" "added after gen1"
+
+# Second install — seeding should pull the new commit
+hw_cli install 2>/dev/null
+assert_0 $? "second install exits 0"
+
+_hd=$(hw_data_dir)
+_cur=$(readlink "$_hd/current")
+assert_file "$_cur/assets/myrepo/newfile.txt" "seeded asset updated with new upstream commit"
+
+teardown_cli_env
+
+section "git asset seeding — static (non-git) assets refreshed from source"
+
+setup_cli_env
+_fix="$_T_TMP/source"
+make_module "$_fix" "root"
+
+# Add a static asset to the module source
+mkdir -p "$_fix/assets"
+printf 'original\n' > "$_fix/assets/theme.txt"
+
+hw_cli init "$_fix" 2>/dev/null
+
+_hd=$(hw_data_dir)
+_gen1=$(readlink "$_hd/current")
+assert_file "$_gen1/assets/root/theme.txt" "static asset present in gen1"
+
+# Update the static asset in source, then reinstall
+printf 'updated\n' > "$_fix/assets/theme.txt"
+hw_cli install 2>/dev/null
+
+_gen2=$(readlink "$_hd/current")
+_content=$(cat "$_gen2/assets/root/theme.txt" 2>/dev/null)
+assert_eq "$_content" "updated" "static asset refreshed from source (not seeded from gen1)"
+
+# Confirm the static dir has no .git — it should never be treated as a git asset
+assert_no_path "$_gen2/assets/root/.git" "static asset dir has no .git"
+
+teardown_cli_env

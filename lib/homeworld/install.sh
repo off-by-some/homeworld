@@ -1,10 +1,44 @@
 #!/bin/sh
 # install.sh — the module installation pipeline.
 #
-# Each module is installed in dependency order. The pipeline is:
-#   assets → commands → packages → install.sh (post-install hook)
+# Generation build order:
+#   1. hw_seed_git_assets  — copy+pull git-repo assets from previous generation
+#   Per module, in dependency order:
+#   2. hw_install_assets   — copy static source assets into generation
+#   3. hw_install_commands — deploy commands and generate launchers
+#   4. install.sh hook     — arbitrary per-module setup
+#
 # Commands from already-installed modules are on PATH by the time each
 # module's install.sh runs, so transitive deps can provide tools.
+
+# hw_seed_git_assets gen_path
+# Seed git-repo assets from the active generation into the pending one and
+# update them via git pull. Runs once before any module's install.sh so that
+# install.sh only needs to handle the first-time clone — subsequent installs
+# get the existing repo copied forward and updated automatically.
+#
+# Only directories containing a .git subdirectory are treated as git assets.
+# Module-namespaced static asset dirs (e.g. assets/zsh/) are plain directories
+# without .git and are left alone.
+hw_seed_git_assets() {
+    _hsga_gen="$1"
+    _hsga_prev="$(hw_current)/assets"
+
+    [ -d "$_hsga_prev" ] || return 0
+
+    for _hsga_item in "$_hsga_prev"/*/; do
+        [ -d "$_hsga_item/.git" ] || continue
+        _hsga_name=$(basename "$_hsga_item")
+        _hsga_target="$_hsga_gen/assets/$_hsga_name"
+
+        [ -d "$_hsga_target" ] && continue
+
+        hw_log "  updating $_hsga_name..."
+        cp -r "$_hsga_item" "$_hsga_target"
+        git -C "$_hsga_target" pull --ff-only 2>/dev/null || \
+            hw_log "  warning: could not update $_hsga_name — kept previous version"
+    done
+}
 
 # hw_install_assets moddir name gen_path
 # Copy module's assets/ tree into the generation, namespaced by module name.
@@ -109,15 +143,15 @@ hw_install_packages() {
     case "$_hip_provider" in
         pacman)
             # shellcheck disable=SC2086
-            pacman -S --needed --noconfirm $_hip_pkg_args
+            sudo pacman -S --needed --noconfirm $_hip_pkg_args
             ;;
         apt)
             # shellcheck disable=SC2086
-            apt-get install -y $_hip_pkg_args
+            sudo apt-get install -y $_hip_pkg_args
             ;;
         dnf)
             # shellcheck disable=SC2086
-            dnf install -y $_hip_pkg_args
+            sudo dnf install -y $_hip_pkg_args
             ;;
         brew)
             # shellcheck disable=SC2086

@@ -204,3 +204,25 @@ make_config() {
     mkdir -p "$_cfg_dir/config"
     printf '%s\n' "$_cfg_content" > "$_cfg_dir/config/$_cfg_file"
 }
+
+# make_git_repo dir [initial_content]
+# Initialise a local git repository with a single commit containing file.txt.
+make_git_repo() {
+    _mgr_dir="$1"; _mgr_content="${2:-v1}"
+    mkdir -p "$_mgr_dir"
+    git -C "$_mgr_dir" init -q
+    git -C "$_mgr_dir" config user.email "test@homeworld.local"
+    git -C "$_mgr_dir" config user.name "Homeworld Test"
+    printf '%s\n' "$_mgr_content" > "$_mgr_dir/file.txt"
+    git -C "$_mgr_dir" add .
+    git -C "$_mgr_dir" commit -q -m "initial commit"
+}
+
+# git_commit dir filename content
+# Add or overwrite filename in a git repo and commit it.
+git_commit() {
+    _gc_dir="$1"; _gc_file="$2"; _gc_content="$3"
+    printf '%s\n' "$_gc_content" > "$_gc_dir/$_gc_file"
+    git -C "$_gc_dir" add .
+    git -C "$_gc_dir" commit -q -m "add $_gc_file"
+}
