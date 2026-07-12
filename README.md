@@ -55,6 +55,13 @@ homeworld list                   # show all modules with platform and status
 homeworld update                 # pull and apply the latest changes (managed sources only)
 ```
 
+After the first install, add this to your shell's RC file (`.zshrc`, `.bashrc`, etc.) so that homeworld-managed commands are on `PATH` in every new session:
+
+```sh
+[[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/homeworld/env.sh" ]] &&
+    source "${XDG_CONFIG_HOME:-$HOME/.config}/homeworld/env.sh"
+```
+
 Not sure what an install would do? `homeworld install --dry-run` runs the complete preflight — discovery, validation, platform filtering, dependency resolution, collision detection, and package planning — and reports exactly what would happen, in order, without touching the machine.
 
 ## How it works

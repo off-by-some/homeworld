@@ -26,14 +26,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show checked-out revision
-        run: |
-          git rev-parse HEAD
-          git log -1 --oneline
-          nl -ba lib/homeworld/module.sh | sed -n '54,75p'
-          sh -n lib/homeworld/module.sh && echo "sh -n: OK"
-          bash -n lib/homeworld/module.sh && echo "bash -n: OK"
-
       - name: Build and test (${{ matrix.distro }})
         run: docker build --no-cache -f ${{ matrix.dockerfile }} .
 
@@ -43,14 +35,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Show checked-out revision
-        run: |
-          git rev-parse HEAD
-          git log -1 --oneline
-          nl -ba lib/homeworld/module.sh | sed -n '54,75p'
-          sh -n lib/homeworld/module.sh && echo "sh -n: OK"
-          bash -n lib/homeworld/module.sh && echo "bash -n: OK"
 
       - name: Install dependencies
         run: brew install git ncurses

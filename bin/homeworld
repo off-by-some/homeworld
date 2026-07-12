@@ -324,8 +324,13 @@ cmd_install() {
 
             _ci_auto=$(hw_module_get "$_ci_moddir" "$_ci_n" "auto_install")
             _ci_applicable="$_ci_applicable $_ci_n"
-            printf '  %sINSTALL%s  %-16s %s\n' \
-                "$_HW_C_OK" "$_HW_C_RST" "$_ci_n" "$_ci_desc" >&2
+            if [ "$_ci_n" = "$_ci_root_name" ] || [ "${_ci_auto:-true}" != "false" ]; then
+                printf '  %sINSTALL%s  %-16s %s\n' \
+                    "$_HW_C_OK" "$_HW_C_RST" "$_ci_n" "$_ci_desc" >&2
+            else
+                printf '  %sSKIP%s     %-16s auto_install=false\n' \
+                    "$_HW_C_WARN" "$_HW_C_RST" "$_ci_n" >&2
+            fi
         else
             printf '  %sSKIP%s     %-16s %s\n' \
                 "$_HW_C_WARN" "$_HW_C_RST" "$_ci_n" "$_ci_reason" >&2
