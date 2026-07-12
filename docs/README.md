@@ -163,18 +163,20 @@ cat "$(homeworld path self banner.txt)"
 
 ### Assets
 
-Files under `assets/` are copied into the pending generation at install time, namespaced by module name:
-
-```
-assets/themes/default.zsh
-    → $HOMEWORLD_TARGET_ASSETS/zsh/themes/default.zsh   (staged)
-    → accessible via: homeworld path asset zsh/themes/default.zsh
-```
-
-To reference an asset from a command or config file:
+Files under `assets/` are copied into the pending generation at install time, namespaced by module name. Reference them with `homeworld path asset`:
 
 ```sh
 homeworld path asset zsh/themes/default.zsh
+```
+
+`homeworld path asset` is context-aware: inside `install.sh` it resolves to the pending generation being built; outside (in commands, config files, or scripts) it resolves to the active generation. This means `install.sh` can clone or write additional assets into the pending generation using the same command that other code uses to read them at runtime:
+
+```sh
+# Inside install.sh — writes into the pending generation
+git clone https://example.com/plugin.git "$(homeworld path asset my-plugin)"
+
+# Inside a command at runtime — reads from the active generation
+cat "$(homeworld path asset zsh/themes/default.zsh)"
 ```
 
 Use assets for files shared across multiple commands, or for resources accessed from config files at runtime. Files private to a single command belong in that command's directory instead.
@@ -227,13 +229,11 @@ Receives:
 | `HOMEWORLD_PLATFORM` | `linux` or `macos` |
 | `HOMEWORLD_DISTRO` | `arch`, `debian`, etc., or empty |
 | `HOMEWORLD_ROOT` | Stable runtime root — always resolves to `current/` |
-| `HOMEWORLD_ASSETS` | `$HOMEWORLD_ROOT/assets` |
 | `HOMEWORLD_BIN` | `$HOMEWORLD_ROOT/bin` |
 | `HOMEWORLD_TARGET` | Absolute path to the pending generation being built |
-| `HOMEWORLD_TARGET_ASSETS` | `$HOMEWORLD_TARGET/assets` |
 | `HOMEWORLD_TARGET_BIN` | `$HOMEWORLD_TARGET/bin` |
 
-Use `HOMEWORLD_TARGET_*` only when `install.sh` needs to inspect or modify files being staged. Runtime configuration uses stable paths or the `homeworld path` CLI.
+Prefer `homeworld path asset` over raw path variables for asset access — it is context-aware and resolves correctly to the pending generation inside `install.sh` and to the active generation everywhere else.
 
 A typical install script:
 
@@ -291,10 +291,12 @@ Unmanaged files must be removed or relocated manually before Homeworld can take 
 ### Queries
 
 ```sh
-homeworld path root                         # active runtime root (current/)
-homeworld path asset <module>/<path>        # deployed asset path
-homeworld path self [relative]              # current command's deployed directory (or a path within it)
+homeworld path root                    # active runtime root (current/)
+homeworld path asset <path>            # asset path — pending generation inside install.sh, active elsewhere
+homeworld path self [relative]         # current command's deployed directory (or a path within it)
 ```
+
+`homeworld path asset` is context-aware. Inside `install.sh` it resolves to the pending generation so scripts can write assets there directly. Outside `install.sh` — in commands, config files, or any other runtime context — it resolves to the active generation. The same call works correctly in both places.
 
 `homeworld path self` is only meaningful inside a Homeworld-managed command. It returns the directory containing `run` for the currently executing command, giving co-located files a stable, generation-aware path without any knowledge of Homeworld's internal layout.
 
