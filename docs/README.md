@@ -6,64 +6,32 @@
 
 <p align="center"><i>Full reference for modules, manifests, commands, assets, packages, configuration linking, the CLI, and the runtime layout.</i></p>
 
-New to Homeworld? Start with the [main README](../README.md) for the pitch, installation, and quick start.
+New to Homeworld? Start with the [main README](../README.md) for the idea, installation, and quick start. This document assumes you know what a module is and goes deep on everything else.
+
+This document is normative for Homeworld as tracked on `main`; where the front page describes behavior, this page defines it. If you are running a tagged release, consult the copy of this document shipped at that tag.
 
 ## Contents
 
-- [Source modes](#source-modes)
-- [The root module](#the-root-module)
 - [Module structure](#module-structure)
   - [Manifest](#manifest)
-  - [Commands](#commands)
-  - [Assets](#assets)
-  - [System packages](#system-packages)
-  - [install.sh](#installsh)
-  - [Configuration linking](#configuration-linking)
+- [The root module](#the-root-module)
+- [Installation lifecycle](#installation-lifecycle)
+- [System packages](#system-packages)
+- [Commands](#commands)
+- [Assets](#assets)
+- [install.sh](#installsh)
+- [Configuration linking](#configuration-linking)
+- [Sources and updates](#sources-and-updates)
 - [CLI reference](#cli-reference)
+- [Shell environment](#shell-environment)
 - [Repository layout](#repository-layout)
 - [Runtime layout](#runtime-layout)
-- [Shell environment](#shell-environment)
-- [Updates](#updates)
-
----
-
-## Source modes
-
-Homeworld treats local and managed sources differently.
-
-**Local source** — `homeworld init <path>`
-
-Homeworld never fetches, pulls, resets, or modifies the directory. It reads and provisions from it as-is. `homeworld update` prints a message and does nothing:
-
-```
-Source is a local directory. Update it with Git, then run `homeworld install`.
-```
-
-**Managed source** — `homeworld init <git-url>`
-
-Homeworld clones the repository into `~/.cache/homeworld/repo` and uses that clone as the source. `homeworld update` runs `git fetch`, shows the incoming commit range, and — after confirmation — fast-forwards the clone and installs the new revision into a fresh generation.
-
-In both modes, `homeworld init` validates that the source contains a `.homeworld-module` at its root, records the source path, and runs the first install.
-
----
-
-## The root module
-
-The root `.homeworld-module` is an ordinary module. It participates in dependency ordering normally and may declare `HOMEWORLD_DEPENDS`. Its `assets/`, `commands/`, and `config/` directories belong exclusively to it.
-
-What makes it special is its selection: the root module is always included in the installation plan regardless of `HOMEWORLD_AUTO_INSTALL`. If its platform, distro, or version requirements are not satisfied, the entire installation fails rather than skipping it.
-
-The root manifest is also the only place `HOMEWORLD_REQUIRES` is read — version compatibility is a property of the provisioning source, not individual modules:
-
-| Field | Description |
-|---|---|
-| `HOMEWORLD_REQUIRES` | Minimum Homeworld version (`MAJOR.MINOR` or `MAJOR.MINOR.PATCH`, compared numerically). Homeworld rejects the installation plan if the installed CLI is older. |
 
 ---
 
 ## Module structure
 
-A module is any directory containing a `.homeworld-module` file. Its conventional subdirectories:
+A module is any directory containing a `.homeworld-module` file. Every subdirectory is optional; each one that exists means exactly one thing:
 
 ```
 shells/zsh/
@@ -86,7 +54,7 @@ shells/zsh/
 
 ### Manifest
 
-`.homeworld-module` is a bash-sourceable file. It is sourced in an isolated subshell with all supported fields cleared beforehand. Unknown `HOMEWORLD_*` fields are rejected to catch typos.
+`.homeworld-module` is a bash-sourceable file. It is sourced in an isolated subshell with all supported fields cleared beforehand, and unknown `HOMEWORLD_*` fields are rejected to catch typos.
 
 ```bash
 HOMEWORLD_MODULE_NAME="zsh"
@@ -110,7 +78,35 @@ HOMEWORLD_AUTO_INSTALL="true"
 
 **Manifests are trusted code.** `.homeworld-module` files are sourced as Bash and execute with the same trust as `install.sh`. Treat them as repository code, not inert data.
 
-**Platform and distro filtering is visible, not silent.** When a module is inapplicable, it is reported as skipped with a reason. Skips are suppressed only with `--quiet`.
+---
+
+## The root module
+
+Every provisioning source must have a `.homeworld-module` at its root — that file is what `homeworld init` validates before accepting a source. The root module is an ordinary module in most respects: it participates in dependency ordering normally, may declare `HOMEWORLD_DEPENDS`, and its `assets/`, `commands/`, and `config/` directories belong exclusively to it.
+
+Two things make it special:
+
+1. **It is always selected.** The root module is included in every installation plan regardless of `HOMEWORLD_AUTO_INSTALL`. If its platform, distro, or version requirements are not satisfied, the entire installation fails rather than skipping it.
+2. **It is the only place `HOMEWORLD_REQUIRES` is read** — version compatibility is a property of the provisioning source, not individual modules:
+
+| Field | Description |
+|---|---|
+| `HOMEWORLD_REQUIRES` | Minimum Homeworld version (`MAJOR.MINOR` or `MAJOR.MINOR.PATCH`, compared numerically). Homeworld rejects the installation plan if the installed CLI is older. |
+
+---
+
+## Installation lifecycle
+
+Every `homeworld install` runs the same pipeline:
+
+```
+discover → validate → filter → resolve dependencies → plan packages
+        → build pending generation → activate → reconcile links
+```
+
+**Preflight.** Homeworld discovers every module in the source, validates manifests and command directories, filters by platform and distro, resolves dependency order, and plans package installation. Dependency cycles, missing dependencies, and command-name collisions are all rejected here — before any installation begins. `homeworld install --dry-run` runs this entire preflight and reports exactly what would happen, in order, without modifying the machine.
+
+**Filtering is visible, not silent.** When a module is inapplicable, it is reported as skipped with a reason. Skips are suppressed only with `--quiet`:
 
 ```
 INSTALL  programs          Generic utilities
@@ -119,69 +115,25 @@ SKIP     awesomewm         unsupported on macos
 SKIP     decompilation     no package provider for this distro
 ```
 
-Explicitly requesting a skipped module is an error:
+Explicitly requesting a skipped module is an error, not a silent no-op:
 
 ```sh
 homeworld install awesomewm   # fails on macos with a clear message
 ```
 
-**Dependency cycles and missing dependencies are rejected before any installation begins.**
+**Build.** Modules install in dependency order into a new *pending generation* — a self-contained directory holding deployed commands, assets, staged config, and generated launchers. The active generation is never modified during a build.
 
-### Commands
+**Activation and the transaction boundary.** This is the canonical statement of what Homeworld does and does not guarantee; other sections link here rather than restate it.
 
-Every immediate subdirectory under `commands/` defines one public command. The directory name is the command name. The executable file `run` inside it is the entry point.
+- Generation switching is atomic: `current` is a single symlink swap, performed only after every module in the plan succeeds.
+- External config-link activation is journaled and rollback-safe. Newly created links are removed if activation fails, and interrupted activation is detected and repaired on the next Homeworld invocation.
+- System package changes and arbitrary side effects performed by `install.sh` are **outside** the transaction boundary. They are not rolled back.
 
-```
-commands/greeting/run        →  greeting   (available on PATH)
-commands/awesome-tools/run   →  awesome-tools
-```
+**Rollback.** `homeworld rollback` swaps `current` and `previous` using the same journaled activation and managed-link reconciliation as installation: it restores links declared by the previous generation and removes links declared only by the generation being deactivated. Rollback genuinely restores the generation, not merely its directory pointer — and it is always reversible by running it again.
 
-A command directory may contain any files it needs:
+---
 
-```
-commands/greeting/
-├── run              # entry point
-├── banner.txt
-└── system-info.sh
-```
-
-There is no separate manifest field for exposing commands. The directory name is the name. To rename a command, rename the directory.
-
-Command directory names must match `[a-z0-9][a-z0-9._-]*`. A command directory with no executable `run` file is a preflight error. Command name collisions across modules are detected and rejected during preflight. Homeworld generates a launcher at `$HOMEWORLD_BIN/<name>` that executes `run` with enough context for `homeworld path self` to work.
-
-Inside a command's `run`, use the CLI to reference co-located files:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-cat "$(homeworld path self banner.txt)"
-"$(homeworld path self system-info.sh)"
-```
-
-`homeworld path self` returns the deployed directory of the currently running command. `homeworld path self <relative>` returns a path within it. No module names, no runtime variables, no knowledge of generations required.
-
-### Assets
-
-Files under `assets/` are copied into the pending generation at install time, namespaced by module name. Reference them with `homeworld path asset`:
-
-```sh
-homeworld path asset zsh/themes/default.zsh
-```
-
-`homeworld path asset` is context-aware: inside `install.sh` it resolves to the pending generation being built; outside (in commands, config files, or scripts) it resolves to the active generation. This means `install.sh` can clone or write additional assets into the pending generation using the same command that other code uses to read them at runtime:
-
-```sh
-# Inside install.sh — writes into the pending generation
-git clone https://example.com/plugin.git "$(homeworld path asset my-plugin)"
-
-# Inside a command at runtime — reads from the active generation
-cat "$(homeworld path asset zsh/themes/default.zsh)"
-```
-
-Use assets for files shared across multiple commands, or for resources accessed from config files at runtime. Files private to a single command belong in that command's directory instead.
-
-### System packages
+## System packages
 
 Place package lists named after the provider in a `packages/` directory:
 
@@ -216,7 +168,69 @@ Planning packages through pacman:
   zsh
 ```
 
-### install.sh
+Package installation happens outside the activation transaction — see [Installation lifecycle](#installation-lifecycle).
+
+---
+
+## Commands
+
+Every immediate subdirectory under `commands/` defines one public command. The directory name is the command name. The executable file `run` inside it is the entry point.
+
+```
+commands/greeting/run        →  greeting   (available on PATH)
+commands/awesome-tools/run   →  awesome-tools
+```
+
+There is no separate manifest field for exposing commands. The directory name is the name. To rename a command, rename the directory.
+
+A command directory may contain any files it needs:
+
+```
+commands/greeting/
+├── run              # entry point
+├── banner.txt
+└── system-info.sh
+```
+
+Command directory names must match `[a-z0-9][a-z0-9._-]*`. A command directory with no executable `run` file is a preflight error, and command name collisions across modules are detected and rejected during preflight. Homeworld generates a launcher at `$HOMEWORLD_BIN/<name>` that executes `run` with enough context for `homeworld path self` to work.
+
+Inside a command's `run`, use the CLI to reference co-located files:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+cat "$(homeworld path self banner.txt)"
+"$(homeworld path self system-info.sh)"
+```
+
+`homeworld path self` returns the deployed directory of the currently running command. `homeworld path self <relative>` returns a path within it. No module names, no runtime variables, no knowledge of generations required.
+
+---
+
+## Assets
+
+Files under `assets/` are copied into the pending generation at install time, namespaced by module name. Reference them with `homeworld path asset`:
+
+```sh
+homeworld path asset zsh/themes/default.zsh
+```
+
+`homeworld path asset` is context-aware: inside `install.sh` it resolves to the pending generation being built; outside (in commands, config files, or scripts) it resolves to the active generation. This means `install.sh` can clone or write additional assets into the pending generation using the same command that other code uses to read them at runtime:
+
+```sh
+# Inside install.sh — writes into the pending generation
+git clone https://example.com/plugin.git "$(homeworld path asset my-plugin)"
+
+# Inside a command at runtime — reads from the active generation
+cat "$(homeworld path asset zsh/themes/default.zsh)"
+```
+
+Use assets for files shared across multiple commands, or for resources accessed from config files at runtime. Files private to a single command belong in that command's directory instead.
+
+---
+
+## install.sh
 
 Runs after commands, assets, and packages are handled. Before each module's `install.sh` runs, Homeworld prepends `$HOMEWORLD_TARGET_BIN` to `PATH`. Commands exposed by previously completed dependencies are therefore available inside `install.sh` — dependency ordering has practical meaning, not merely chronological meaning. Runtime configuration should still reference commands by name, not by path.
 
@@ -245,7 +259,11 @@ homeworld config link .zshrc "$HOME/.zshrc"
 homeworld config link nvim "$HOME/.config/nvim"
 ```
 
-### Configuration linking
+Side effects performed directly by `install.sh` — beyond Homeworld primitives like `homeworld config link` — fall outside the transaction boundary described in [Installation lifecycle](#installation-lifecycle).
+
+---
+
+## Configuration linking
 
 Relative source paths resolve from the module's `config/` directory. Both files and directories are supported. Absolute paths and paths containing `..` are rejected. A module can only manage configuration stored inside its own `config/` directory.
 
@@ -265,7 +283,7 @@ nested/foo  →  config/zsh/nested/foo
 4. Creates the external symlink pointing to `current/config/<module>/` only during activation.
 5. Removes any newly created links if activation fails.
 
-A failed `homeworld config link` operation cannot leave behind a broken symlink or modify the active configuration. Arbitrary side effects performed directly by `install.sh` remain outside Homeworld's transaction boundary.
+A failed `homeworld config link` operation cannot leave behind a broken symlink or modify the active configuration.
 
 **Destination policy:**
 
@@ -280,9 +298,39 @@ Unmanaged files must be removed or relocated manually before Homeworld can take 
 
 **Link reconciliation.** Each generation records its external config links in `.homeworld/managed-links`. During activation, Homeworld compares the previous and pending link sets. Links no longer declared by the pending generation are removed — but only if they still point to their expected Homeworld-managed targets. If a link destination has been altered, Homeworld fails rather than deleting it silently.
 
-**Transaction boundary.** Runtime generation switching is atomic — `current` is a single symlink swap. External config-link activation is journaled and rollback-safe; interrupted activation is detected and repaired on the next Homeworld invocation. System package changes and arbitrary side effects performed by `install.sh` are not automatically rolled back. `homeworld rollback` restores the previous generation; it does not undo package installations.
+Activation, rollback, and the transaction boundary follow the model defined in [Installation lifecycle](#installation-lifecycle).
 
-**Rollback reconciles config links.** `homeworld rollback` uses the same journaled activation and managed-link reconciliation process as installation. It restores links declared by the previous generation and removes links declared only by the generation being deactivated. The `current` and `previous` symlinks are swapped only as part of that activation transaction — rollback genuinely restores the generation, not merely its directory pointer.
+---
+
+## Sources and updates
+
+Homeworld treats local and managed sources differently. In both modes, `homeworld init` validates that the source contains a `.homeworld-module` at its root, records the source path, and runs the first install.
+
+**Local source** — `homeworld init <path>`
+
+Homeworld never fetches, pulls, resets, or modifies the directory. It reads and provisions from it as-is. `homeworld update` prints a message and does nothing:
+
+```
+Source is a local directory. Update it with Git, then run `homeworld install`.
+```
+
+**Managed source** — `homeworld init <git-url>`
+
+Homeworld clones the repository into `~/.cache/homeworld/repo` and uses that clone as the source. `homeworld update` runs `git fetch`, shows the incoming commit range, and — after confirmation — fast-forwards the clone and installs the new revision into a fresh generation, activating it atomically on success.
+
+**Background checks.** At shell startup, `homeworld update --check --async` runs if more than 24 hours have passed since the last check. For managed sources, it acquires a lock to prevent concurrent runs, runs `git fetch` against the managed clone, records whether the remote is ahead, and exits silently. For local sources, it skips the check entirely. There is no daemon and no telemetry — the check contacts only your own repository's remote, and the active generation is never modified.
+
+The next interactive shell prints one line if an update is available:
+
+```
+Homeworld update available. Run `homeworld update` to apply.
+```
+
+**Updating the CLI itself.** The Homeworld CLI is installed and updated independently of any provisioning source. Rerun the bootstrap installer:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/off-by-some/homeworld/refs/heads/main/install.sh | sh
+```
 
 ---
 
@@ -329,8 +377,6 @@ homeworld status                            # summarize the active generation
 homeworld doctor                            # check for common environment issues
 ```
 
-`--dry-run` performs a complete preflight: discovery, validation, platform filtering, dependency resolution, collision detection, and package planning. It reports exactly what would happen and in what order, without modifying the machine.
-
 `homeworld install <module>` installs the named module and all of its transitive dependencies. It does not install modules that depend on it.
 
 ### Updates
@@ -353,11 +399,41 @@ homeworld config link <src> <dest>          # stage config into generation, defe
 
 ---
 
+## Shell environment
+
+Homeworld generates `env.sh` at `${XDG_CONFIG_HOME:-$HOME/.config}/homeworld/env.sh` during installation. Shell modules source it once:
+
+```sh
+_hw_config="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+[ ! -r "$_hw_config/homeworld/env.sh" ] ||
+    . "$_hw_config/homeworld/env.sh"
+
+unset _hw_config
+```
+
+The generated file:
+
+```sh
+_hw_bin="${XDG_DATA_HOME:-$HOME/.local/share}/homeworld/current/bin"
+
+case ":$PATH:" in
+    *":$_hw_bin:"*) ;;
+    *) export PATH="$_hw_bin:$PATH" ;;
+esac
+
+unset _hw_bin
+```
+
+This file is shell-compatible and idempotent. It puts Homeworld-managed commands on `PATH` and nothing else. Runtime paths are accessed through the `homeworld path` CLI when needed.
+
+---
+
 ## Repository layout
 
 Category directories (`shells/`, `desktops/`, `workflows/`) have no behavioral meaning. They exist for human navigation. Homeworld discovers modules at any depth by their `.homeworld-module` sentinel. Reorganizing the repository does not change module identity — names are set by the manifest, not the path.
 
-The root `.homeworld-module` is an ordinary module. Its `assets/`, `commands/`, and `config/` directories belong exclusively to it. Nested modules own only their immediate conventional subdirectories.
+The root `.homeworld-module` is an ordinary module (see [The root module](#the-root-module)). Its `assets/`, `commands/`, and `config/` directories belong exclusively to it. Nested modules own only their immediate conventional subdirectories.
 
 ```
 <source-repo>/
@@ -413,6 +489,8 @@ The root `.homeworld-module` is an ordinary module. Its `assets/`, `commands/`, 
 ---
 
 ## Runtime layout
+
+Paths below show the defaults; `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`, and `XDG_CONFIG_HOME` override their respective roots.
 
 ```
 ~/.local/bin/
@@ -480,54 +558,6 @@ The root `.homeworld-module` is an ordinary module. Its `assets/`, `commands/`, 
 
 `~/.local/bin/homeworld` is installed and updated independently of the provisioning source. A failed module installation or rollback never affects it.
 
-`homeworld rollback` swaps `current` and `previous`. Rollback is always reversible by running it again.
-
 `homeworld gc` removes generations not referenced by `current` or `previous`. It never removes the active installation.
 
-Generation metadata travels with the generation inside `.homeworld/`. `homeworld rollback`, `homeworld status`, and `homeworld generations` always read from the actual generation, never from a global state file.
-
----
-
-## Shell environment
-
-Homeworld generates `~/.config/homeworld/env.sh` during installation. Shell modules source it once:
-
-```sh
-[ ! -r "$HOME/.config/homeworld/env.sh" ] ||
-    . "$HOME/.config/homeworld/env.sh"
-```
-
-The generated file:
-
-```sh
-_hw_bin="${XDG_DATA_HOME:-$HOME/.local/share}/homeworld/current/bin"
-
-case ":$PATH:" in
-    *":$_hw_bin:"*) ;;
-    *) export PATH="$_hw_bin:$PATH" ;;
-esac
-
-unset _hw_bin
-```
-
-This file is shell-compatible and idempotent. It puts Homeworld-managed commands on `PATH` and nothing else. Runtime paths are accessed through the `homeworld path` CLI when needed.
-
----
-
-## Updates
-
-At shell startup, `homeworld update --check --async` runs if more than 24 hours have passed since the last check. For managed sources, it acquires a lock to prevent concurrent runs, runs `git fetch` against the managed clone, records whether the remote is ahead, and exits silently. For local sources, it skips the check entirely. The active generation is never modified.
-
-The next interactive shell prints one line if an update is available:
-
-```
-Homeworld update available. Run `homeworld update` to apply.
-```
-
-`homeworld update` shows the incoming commit range, prompts for confirmation, fast-forwards the managed clone to the fetched revision, runs `homeworld install`, and atomically activates the new generation on success.
-
-To update the Homeworld CLI itself, rerun the bootstrap installer:
-
-```sh
-curl -fsSL <install-url> | sh
-```
+Generation metadata travels with the generation inside `.homeworld/`. `homeworld rollback`, `homeworld status`, and `homeworld generations` always read from the actual generation, never from a global state file. Generation switching and rollback semantics are defined in [Installation lifecycle](#installation-lifecycle).
