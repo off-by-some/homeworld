@@ -302,9 +302,21 @@ hw_symlink_replace() {
     _hsr_target=$1
     _hsr_dest=$2
     _hsr_parent=$(dirname "$_hsr_dest")
-    _hsr_tmp="$_hsr_parent/.homeworld-link-$$-$(basename "$_hsr_dest")"
     mkdir -p "$_hsr_parent" || return 1
-    rm -f "$_hsr_tmp"
+
+    # Keep the temporary name independent from the destination basename.
+    # Destination names may contain spaces, glob characters, or multibyte
+    # bytes. A small ASCII-only sibling name avoids passing those bytes through
+    # an unnecessary basename command substitution before the atomic rename.
+    _hsr_index=0
+    while :; do
+        _hsr_tmp="$_hsr_parent/.homeworld-link-$$-$_hsr_index"
+        if [ ! -e "$_hsr_tmp" ] && [ ! -L "$_hsr_tmp" ]; then
+            break
+        fi
+        _hsr_index=$((_hsr_index + 1))
+    done
+
     ln -s "$_hsr_target" "$_hsr_tmp" || return 1
     # POSIX mv may follow a destination symlink to a directory. GNU/BusyBox
     # provide -T and BSD/macOS provides -h; use either to replace the link name.

@@ -11,8 +11,10 @@ section "hostile but supported paths"
 setup_env
 module="$_T_TMP/module with spaces"; mkdir -p "$module/config"; printf value > "$module/config/file"
 HOMEWORLD_MODULE_ROOT="$module"; export HOMEWORLD_MODULE_ROOT
-gen=$(hw_gen_new); dest="$_T_TMP/path with spaces [*] ü"
+unicode_suffix=$(printf '\303\274')
+gen=$(hw_gen_new); dest="$_T_TMP/path with spaces [*] $unicode_suffix"
 hw_config_link config/file "$dest" mod "$gen"; hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
+assert_link "$dest" "$(hw_current)/config/mod/file" "hostile destination link is created exactly"
 assert_eq "$(cat "$dest")" value "spaces, glob characters, and Unicode work"
 (hw_managed_link_record "$_T_TMP/bad
 path" config mod/file mod "$gen") >/dev/null 2>&1
