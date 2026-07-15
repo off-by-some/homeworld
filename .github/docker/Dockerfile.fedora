@@ -1,7 +1,9 @@
 FROM fedora:latest
-RUN dnf install -y git ncurses && dnf clean all
+RUN dnf install -y git ncurses dash busybox && dnf clean all
 ENV PATH="/root/.local/bin:$PATH"
 WORKDIR /homeworld
 COPY . .
 RUN sh install.sh
 RUN sh tests/run.sh
+RUN HOMEWORLD_TEST_SHELL=dash dash tests/run.sh
+RUN HOMEWORLD_TEST_SHELL="busybox ash" busybox ash tests/run.sh

@@ -116,7 +116,18 @@ t_summary() {
 # point at a throw-away temp directory, not the real user state.
 
 _T_TMP=""
-_T_OLD_DATA=""; _T_OLD_STATE=""; _T_OLD_CACHE=""
+_T_OLD_DATA=""; _T_OLD_STATE=""; _T_OLD_CACHE=""; _T_OLD_CONFIG=""
+
+
+# Make temporary trees removable after tests create read-only repository
+# realizations. Only directories need their owner write bit restored for rm to
+# unlink their contents. find does not follow symlinked directories here, so
+# external state and managed destinations are not modified.
+test_make_tree_removable() {
+    _tmtr_root=$1
+    [ -d "$_tmtr_root" ] || return 0
+    find "$_tmtr_root" -type d -exec chmod u+rwx {} + 2>/dev/null || true
+}
 
 # setup_env — redirect HW_* paths to an isolated tmpdir for the current test.
 # Always pair with teardown_env.
@@ -125,18 +136,22 @@ setup_env() {
     _T_OLD_DATA="${HW_DATA:-}"
     _T_OLD_STATE="${HW_STATE:-}"
     _T_OLD_CACHE="${HW_CACHE:-}"
+    _T_OLD_CONFIG="${XDG_CONFIG_HOME:-}"
     HW_DATA="$_T_TMP/data"
     HW_STATE="$_T_TMP/state"
     HW_CACHE="$_T_TMP/cache"
-    export HW_DATA HW_STATE HW_CACHE
-    mkdir -p "$HW_DATA/generations" "$HW_STATE/locks" "$HW_CACHE"
+    XDG_CONFIG_HOME="$_T_TMP/config"
+    export HW_DATA HW_STATE HW_CACHE XDG_CONFIG_HOME
+    mkdir -p "$HW_DATA/generations" "$HW_STATE/locks" "$HW_CACHE" "$XDG_CONFIG_HOME"
 }
 
 teardown_env() {
     HW_DATA="$_T_OLD_DATA"
     HW_STATE="$_T_OLD_STATE"
     HW_CACHE="$_T_OLD_CACHE"
-    export HW_DATA HW_STATE HW_CACHE
+    XDG_CONFIG_HOME="$_T_OLD_CONFIG"
+    export HW_DATA HW_STATE HW_CACHE XDG_CONFIG_HOME
+    test_make_tree_removable "$_T_TMP"
     rm -rf "$_T_TMP"
     _T_TMP=""
 }
@@ -148,15 +163,22 @@ _T_XDG=""
 setup_cli_env() {
     _T_TMP=$(mktemp -d)
     _T_XDG="$_T_TMP"
+    _T_OLD_CONFIG="${XDG_CONFIG_HOME:-}"
+    XDG_CONFIG_HOME="$_T_XDG/xdg/config"
+    export XDG_CONFIG_HOME
     mkdir -p \
         "$_T_XDG/xdg/data" \
         "$_T_XDG/xdg/state" \
         "$_T_XDG/xdg/cache" \
+        "$_T_XDG/xdg/config" \
         "$_T_XDG/home"
 }
 
 teardown_cli_env() {
+    test_make_tree_removable "$_T_TMP"
     rm -rf "$_T_TMP"
+    XDG_CONFIG_HOME="$_T_OLD_CONFIG"
+    export XDG_CONFIG_HOME
     _T_TMP=""
     _T_XDG=""
 }
@@ -166,6 +188,7 @@ hw_cli() {
     XDG_DATA_HOME="$_T_XDG/xdg/data" \
     XDG_STATE_HOME="$_T_XDG/xdg/state" \
     XDG_CACHE_HOME="$_T_XDG/xdg/cache" \
+    XDG_CONFIG_HOME="$_T_XDG/xdg/config" \
     HOME="$_T_XDG/home" \
         homeworld "$@"
 }
@@ -225,4 +248,23 @@ git_commit() {
     printf '%s\n' "$_gc_content" > "$_gc_dir/$_gc_file"
     git -C "$_gc_dir" add .
     git -C "$_gc_dir" commit -q -m "add $_gc_file"
+}
+
+make_asset() {
+    _ma_dir=$1; _ma_name=$2; _ma_content=${3:-asset}
+    mkdir -p "$_ma_dir/assets"
+    printf '%s\n' "$_ma_content" > "$_ma_dir/assets/$_ma_name"
+}
+
+make_state_dir() {
+    mkdir -p "$1"
+    [ $# -lt 2 ] || printf 'state\n' > "$1/$2"
+}
+
+assert_not_eq() {
+    if [ "$1" != "$2" ]; then ok "${3:-values differ}"; else fail "${3:-values should differ}"; fi
+}
+
+assert_read_only() {
+    if [ ! -w "$1" ]; then ok "${2:-read-only: $1}"; else fail "${2:-expected read-only: $1}"; fi
 }

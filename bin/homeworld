@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # homeworld — personal provisioning runtime
 # https://github.com/cassidybridges/linux-toolkit
 set -u
@@ -24,9 +24,12 @@ export HW_SELF_BIN
 . "$_hw_lib/core.sh"
 . "$_hw_lib/platform.sh"
 . "$_hw_lib/module.sh"
+. "$_hw_lib/transaction.sh"
+. "$_hw_lib/state.sh"
+. "$_hw_lib/repo.sh"
+. "$_hw_lib/config.sh"
 . "$_hw_lib/generation.sh"
 . "$_hw_lib/install.sh"
-. "$_hw_lib/config.sh"
 
 # ---------------------------------------------------------------------------
 # usage
@@ -37,33 +40,45 @@ usage() {
 Usage: homeworld <command> [options]
 
 Initialization:
-  init <path|url>          set source and run first install
+  init <path|url>
 
 Installation:
-  install [--dry-run] [--source path] [module]
-                           install modules into a new generation
-  list                     show all modules with platform and status
-  status                   show info about the active generation
-  doctor                   check environment for common issues
+  install [module] [--dry-run] [--reinstall] [--yes]
+  list
+  status
+  doctor
 
 Updates:
-  update [--check] [--apply]
-                           fetch and apply updates (managed sources)
-  rollback                 swap current and previous generations
-  generations              list installed generations
-  gc                       remove unreferenced generations
+  update [--dependencies] [--install]
 
-Path queries:
-  path root                active generation root
-  path asset <path>        path to an asset (pending generation inside install.sh, active elsewhere)
-  path self [relative]     path to the current command's directory
+Resources:
+  repo add <source> <namespace> [--ref <ref>]
+  repo link <namespace> <destination>
+  repo path <namespace>
+  repo update <namespace|--all>
 
-Config (for use inside install.sh):
-  config link <src> <dest> stage config and schedule link on activation
+  asset add <source> <name>
+  asset link <source> <name> <destination>
+  asset path <module/name>
 
-Options:
-  -h, --help               show this help
-  -V, --version            show version
+  config add <source>
+  config link <source> <destination>
+  config path <module/resource>
+
+  command add <source> <name>
+  command path <name|self>
+
+  state bind <name> <path>
+  state link <name-or-path> <destination>
+
+Generations:
+  generation path [self]
+  generation list
+  generation rollback
+  generation gc
+
+Context:
+  module path
 EOF
 }
 
@@ -84,6 +99,11 @@ _hw_read_source() {
 _hw_ensure_dirs() {
     mkdir -p \
         "$HW_DATA/generations" \
+        "$(hw_mirrors_dir)" \
+        "$(hw_checkouts_dir)" \
+        "$(hw_orphaned_dir)" \
+        "$(hw_state_bindings_dir)" \
+        "$(hw_state_targets_dir)" \
         "$HW_STATE/locks" \
         "$HW_STATE/logs" \
         "$HW_CACHE"
@@ -232,13 +252,19 @@ cmd_init() {
 
 cmd_install() {
     _ci_dry_run=0
+    _ci_reinstall=0
+    _ci_yes=0
     _ci_source_override=""
     _ci_target_module=""
+    _ci_gen=""
+    _ci_lock=""
 
     # Parse flags — mixing flags and positional args is intentional
     while [ $# -gt 0 ]; do
         case "$1" in
             --dry-run)      _ci_dry_run=1;          shift ;;
+            --reinstall)    _ci_reinstall=1;         shift ;;
+            --yes)          _ci_yes=1;               shift ;;
             --source)       _ci_source_override="$2"; shift 2 ;;
             --source=*)     _ci_source_override="${1#--source=}"; shift ;;
             -*)             hw_die "unknown option: $1" \
@@ -359,8 +385,33 @@ cmd_install() {
                        "Run 'homeworld list' to see all available modules."
             fi
         fi
-        # Resolve transitive dependencies
+        # Resolve transitive dependencies of the requested module, then merge in
+        # the active generation's module list so a targeted install doesn't drop
+        # config links managed by other modules.
         _ci_to_install=$(_hw_resolve_deps "$_ci_moddir" "$_ci_target_module" "$_ci_applicable")
+        _ci_hw_cur=$(hw_current)
+        if [ -L "$_ci_hw_cur" ]; then
+            _ci_prev_gen=$(readlink "$_ci_hw_cur")
+            _ci_prev_meta="$_ci_prev_gen/.homeworld/installed-modules"
+            if [ -f "$_ci_prev_meta" ]; then
+                while IFS= read -r _ci_prev_mod; do
+                    [ -z "$_ci_prev_mod" ] && continue
+                    # Skip modules no longer applicable on this system
+                    _ci_still_ok=0
+                    for _ci_n in $_ci_applicable; do
+                        [ "$_ci_n" = "$_ci_prev_mod" ] && { _ci_still_ok=1; break; }
+                    done
+                    [ "$_ci_still_ok" = "0" ] && continue
+                    # Skip if already in the plan
+                    _ci_in_plan=0
+                    for _ci_n in $_ci_to_install; do
+                        [ "$_ci_n" = "$_ci_prev_mod" ] && { _ci_in_plan=1; break; }
+                    done
+                    [ "$_ci_in_plan" = "1" ] && continue
+                    _ci_to_install="$_ci_to_install $_ci_prev_mod"
+                done < "$_ci_prev_meta"
+            fi
+        fi
     else
         # Install all auto-install modules (plus root which is always included)
         _ci_to_install=""
@@ -399,19 +450,37 @@ cmd_install() {
         return 0
     fi
 
-    # Install packages first (before any module's install.sh runs)
+    if [ "$_ci_reinstall" = 1 ] && [ "$_ci_yes" != 1 ]; then
+        printf 'Rebuild Homeworld from declarations? [y/N] ' >&2
+        if ! read -r _ci_confirm; then _ci_confirm=''; fi
+        case "$_ci_confirm" in [yY]|[yY][eE][sS]) : ;; *) hw_log "Reinstall cancelled."; rm -f "$_ci_pkg_file"; return 0 ;; esac
+    fi
+
+    # One generation transaction at a time. Holding this lock through the build
+    # makes pending repository realizations temporary garbage-collection roots.
+    _ci_lock=$(hw_global_lock_dir)
+    hw_lock_acquire "$_ci_lock" "installation"
+    _ci_cleanup() {
+        if [ -n "${_ci_gen:-}" ] && [ "$(cat "$_ci_gen/.homeworld/status" 2>/dev/null)" = pending ]; then
+            hw_tree_make_removable "$_ci_gen"
+            rm -rf "$_ci_gen"
+        fi
+        [ -z "${_ci_moddir:-}" ] || rm -rf "$_ci_moddir"
+        [ -z "${_ci_lock:-}" ] || hw_lock_release "$_ci_lock"
+    }
+    trap '_ci_cleanup' EXIT HUP INT TERM
+    hw_transaction_repair_locked
+
+    # Install packages before module hooks. Package-manager changes remain
+    # outside Homeworld's rollback boundary.
     if [ -s "$_ci_pkg_file" ] && [ -n "${_ci_provider:-}" ]; then
         hw_install_packages "$_ci_provider" "$_ci_pkg_file"
     fi
     rm -f "$_ci_pkg_file"
 
-    # Allocate a new generation
     _ci_gen=$(hw_gen_new)
     hw_log ""
     hw_log "Building generation $(basename "$_ci_gen")..."
-
-    # Seed and update git-repo assets from the previous generation
-    hw_seed_git_assets "$_ci_gen"
 
     # Install each module in sorted order
     for _ci_n in $_ci_sorted; do
@@ -421,10 +490,10 @@ cmd_install() {
     # Write metadata before activation so it's part of the generation
     hw_gen_write_meta "$_ci_gen" "$_ci_platform" "${_ci_distro:-}" "${_ci_provider:-}" "$_ci_sorted"
 
-    # Atomic activation
     hw_log ""
     hw_log "Activating generation $(basename "$_ci_gen")..."
-    hw_gen_activate "$_ci_gen"
+    hw_gen_activate_locked "$_ci_gen"
+    hw_gen_gc_locked
 
     # Write env.sh so shells can pick up the bin directory
     _hw_write_env_sh
@@ -434,6 +503,13 @@ cmd_install() {
     hw_log ""
     hw_log "Add homeworld commands to PATH by sourcing:"
     hw_log "  ${XDG_CONFIG_HOME:-$HOME/.config}/homeworld/env.sh"
+
+    _ci_gen=""
+    hw_lock_release "$_ci_lock"
+    _ci_lock=""
+    rm -rf "$_ci_moddir"
+    _ci_moddir=""
+    trap - EXIT HUP INT TERM
 }
 
 # ---------------------------------------------------------------------------
@@ -515,106 +591,53 @@ cmd_status() {
 # ---------------------------------------------------------------------------
 
 cmd_update() {
+    _cu_dependencies=0
+    _cu_install=0
     _cu_check=0
     _cu_async=0
-    _cu_apply=0
-
     while [ $# -gt 0 ]; do
         case "$1" in
-            --check) _cu_check=1; shift ;;
-            --async) _cu_async=1; shift ;;
-            --apply) _cu_apply=1; shift ;;
-            *)       hw_die "unknown option: $1" ;;
+            --dependencies) _cu_dependencies=1 ;;
+            --install) _cu_install=1 ;;
+            --check) _cu_check=1 ;;
+            --async) _cu_async=1 ;;
+            --apply) _cu_install=1 ;;
+            *) hw_die "unknown update option: $1" ;;
         esac
+        shift
     done
 
-    _cu_mode="local"
+    _cu_mode=local
     [ -f "$HW_STATE/source-mode" ] && _cu_mode=$(cat "$HW_STATE/source-mode")
-
-    if [ "$_cu_mode" = "local" ]; then
-        hw_log "Source is a local directory. Update it with Git, then run \`homeworld install\`."
-        return 0
-    fi
-
-    # Managed source
-    hw_require git
-    _cu_source=$(_hw_read_source)
-
-    if [ "$_cu_check" = "1" ] && [ "$_cu_async" = "1" ]; then
-        # Background fetch — acquire a lock file to prevent concurrent runs
-        _cu_lock="$HW_STATE/locks/update.lock"
-        if [ -f "$_cu_lock" ]; then
-            exit 0  # another instance is already running
+    if [ "$_cu_mode" = managed ]; then
+        _cu_source=$(_hw_read_source)
+        hw_require git
+        if [ "$_cu_async" = 1 ]; then
+            git -C "$_cu_source" fetch origin >/dev/null 2>&1 || exit 0
+            exit 0
         fi
-        printf '%s' "$$" > "$_cu_lock"
-        git -C "$_cu_source" fetch origin >/dev/null 2>&1 || true
-        _cu_behind=$(git -C "$_cu_source" rev-list HEAD..origin/HEAD --count 2>/dev/null || printf '0')
-        printf '%s' "$_cu_behind" > "$HW_STATE/update-state"
-        rm -f "$_cu_lock"
-        exit 0
-    fi
-
-    if [ "$_cu_check" = "1" ]; then
-        hw_log "Fetching updates..."
-        git -C "$_cu_source" fetch origin 2>&1 \
-            || hw_die "could not fetch updates from the remote" \
-                      "Check your network connection and that the remote repository is accessible."
-        _cu_behind=$(git -C "$_cu_source" rev-list HEAD..origin/HEAD --count 2>/dev/null || printf '0')
-        if [ "$_cu_behind" = "0" ]; then
-            hw_log "Already up to date."
-        else
-            hw_log "Update available: $_cu_behind commit(s) ahead."
-            hw_log "Run 'homeworld update --apply' to apply."
-            printf '%s' "$_cu_behind" > "$HW_STATE/update-state"
+        hw_log "Updating provisioning source..."
+        git -C "$_cu_source" fetch origin || hw_die "could not fetch provisioning source"
+        if [ "$_cu_check" = 1 ]; then
+            _cu_behind=$(git -C "$_cu_source" rev-list HEAD..origin/HEAD --count 2>/dev/null || printf 0)
+            [ "$_cu_behind" = 0 ] && hw_log "Already up to date." || hw_log "Update available: $_cu_behind commit(s)."
+            return 0
         fi
+        git -C "$_cu_source" merge --ff-only origin/HEAD >/dev/null 2>&1 \
+            || git -C "$_cu_source" merge --ff-only origin/main >/dev/null 2>&1 \
+            || git -C "$_cu_source" merge --ff-only origin/master >/dev/null 2>&1 \
+            || hw_die "the provisioning source cannot be fast-forwarded"
+    elif [ "$_cu_check" = 1 ]; then
         return 0
+    else
+        hw_log "Provisioning source is local; Homeworld will use its current contents."
     fi
 
-    if [ "$_cu_apply" = "1" ]; then
-        hw_log "Applying update..."
-        git -C "$_cu_source" merge --ff-only origin/HEAD 2>&1 \
-            || git -C "$_cu_source" merge --ff-only origin/main 2>&1 \
-            || git -C "$_cu_source" merge --ff-only origin/master 2>&1 \
-            || hw_die "the managed source has diverged and cannot be fast-forwarded" \
-                      "Resolve the divergence manually in '$_cu_source', then run 'homeworld update --apply' again."
-        rm -f "$HW_STATE/update-state"
-        cmd_install
-        return 0
+    if [ "$_cu_dependencies" = 1 ]; then
+        hw_log "Fetching repository dependencies..."
+        hw_repo_update_current '' || hw_die "one or more repository dependencies could not be fetched"
     fi
-
-    # Default: fetch, show range, confirm, apply
-    hw_log "Fetching updates..."
-    git -C "$_cu_source" fetch origin 2>&1 \
-        || hw_die "could not fetch updates from the remote" \
-                  "Check your network connection and that the remote repository is accessible."
-    _cu_behind=$(git -C "$_cu_source" rev-list HEAD..origin/HEAD --count 2>/dev/null || printf '0')
-
-    if [ "$_cu_behind" = "0" ]; then
-        hw_log "Already up to date."
-        return 0
-    fi
-
-    hw_log ""
-    hw_log "Incoming changes ($_cu_behind commit(s)):"
-    git -C "$_cu_source" log HEAD..origin/HEAD --oneline 2>/dev/null | while read -r _cu_line; do
-        hw_log "  $_cu_line"
-    done
-    hw_log ""
-
-    printf 'Apply update? [y/N] ' >&2
-    read -r _cu_confirm
-    case "$_cu_confirm" in
-        [yY] | [yY][eE][sS])
-            git -C "$_cu_source" merge --ff-only origin/HEAD 2>&1 \
-                || hw_die "the managed source has diverged and cannot be fast-forwarded" \
-                          "Resolve the divergence manually in '$_cu_source', then run 'homeworld update --apply'."
-            rm -f "$HW_STATE/update-state"
-            cmd_install
-            ;;
-        *)
-            hw_log "Update cancelled."
-            ;;
-    esac
+    [ "$_cu_install" = 1 ] && cmd_install
 }
 
 # ---------------------------------------------------------------------------
@@ -646,66 +669,158 @@ cmd_gc() {
 }
 
 # ---------------------------------------------------------------------------
-# cmd_path
+# Resource commands
 # ---------------------------------------------------------------------------
 
-cmd_path() {
-    [ $# -gt 0 ] || hw_die "usage: homeworld path root|asset|self [arg]"
-    _cp_subcommand="$1"; shift
+_hw_install_context() {
+    [ -n "${HOMEWORLD_TARGET:-}" ] && [ -n "${HOMEWORLD_MODULE_NAME:-}" ] \
+        || hw_die "$1 must be called from a module install.sh"
+}
 
-    case "$_cp_subcommand" in
-        root)
-            printf '%s\n' "$(hw_current)"
+cmd_repo() {
+    _cr_action=${1:-}; [ $# -gt 0 ] && shift
+    case "$_cr_action" in
+        add)
+            _hw_install_context "homeworld repo add"
+            [ $# -ge 2 ] || hw_die "usage: homeworld repo add <source> <namespace> [--ref <ref>]"
+            _cr_source=$1; _cr_ns=$2; shift 2; _cr_ref=''
+            while [ $# -gt 0 ]; do
+                case "$1" in --ref) [ $# -ge 2 ] || hw_die "--ref requires a value"; _cr_ref=$2; shift 2 ;; *) hw_die "unknown repo add option: $1" ;; esac
+            done
+            hw_repo_add_to_gen "$_cr_source" "$_cr_ns" "$HOMEWORLD_TARGET" "$_cr_ref"
             ;;
-
-        asset)
-            [ $# -gt 0 ] || hw_die "usage: homeworld path asset <path>"
-            if [ -n "${HOMEWORLD_TARGET:-}" ]; then
-                printf '%s\n' "$(hw_safe_path "$HOMEWORLD_TARGET/assets" "$1")"
-            else
-                printf '%s\n' "$(hw_safe_path "$(hw_current)/assets" "$1")"
-            fi
+        link)
+            _hw_install_context "homeworld repo link"
+            [ $# -eq 2 ] || hw_die "usage: homeworld repo link <namespace> <destination>"
+            hw_repo_link "$1" "$2" "$HOMEWORLD_TARGET" "$HOMEWORLD_MODULE_NAME"
             ;;
-
-        self)
-            # Only valid when called from inside a Homeworld-managed command.
-            # The launcher sets HOMEWORLD_COMMAND_DIR.
-            _cp_cmd_dir="${HOMEWORLD_COMMAND_DIR:-}"
-            if [ -z "$_cp_cmd_dir" ]; then
-                hw_die "'homeworld path self' is only valid inside a homeworld-managed command"
-            fi
-
-            if [ $# -gt 0 ]; then
-                printf '%s\n' "$(hw_safe_path "$_cp_cmd_dir" "$1")"
-            else
-                printf '%s\n' "$_cp_cmd_dir"
-            fi
+        path)
+            [ $# -eq 1 ] || hw_die "usage: homeworld repo path <namespace>"
+            hw_repo_path "$1" || hw_die "repository is not available in this generation: $1"
+            printf '\n'
             ;;
-
-        *)
-            hw_die "unknown path subcommand: $_cp_subcommand. Use root, asset, or self"
+        update)
+            [ $# -eq 1 ] || hw_die "usage: homeworld repo update <namespace|--all>"
+            case "$1" in --all) hw_repo_update_current '' ;; *) hw_repo_update_current "$1" ;; esac \
+                || hw_die "one or more repositories could not be fetched"
             ;;
+        *) hw_die "unknown repo subcommand: ${_cr_action:-}" ;;
     esac
 }
 
-# ---------------------------------------------------------------------------
-# cmd_config_link
-# ---------------------------------------------------------------------------
+cmd_asset() {
+    _ca_action=${1:-}; [ $# -gt 0 ] && shift
+    case "$_ca_action" in
+        add)
+            _hw_install_context "homeworld asset add"
+            [ $# -eq 2 ] || hw_die "usage: homeworld asset add <source> <name>"
+            hw_asset_add "$1" "$2" "$HOMEWORLD_TARGET" "$HOMEWORLD_MODULE_NAME"
+            ;;
+        link)
+            _hw_install_context "homeworld asset link"
+            [ $# -eq 3 ] || hw_die "usage: homeworld asset link <source> <name> <destination>"
+            hw_asset_link "$1" "$2" "$3" "$HOMEWORLD_TARGET" "$HOMEWORLD_MODULE_NAME"
+            ;;
+        path)
+            [ $# -eq 1 ] || hw_die "usage: homeworld asset path <module/name>"
+            if [ -n "${HOMEWORLD_TARGET:-}" ]; then _ca_base=$HOMEWORLD_TARGET; else _ca_base=$(hw_current); fi
+            printf '%s\n' "$(hw_safe_path "$_ca_base/assets" "$1")"
+            ;;
+        *) hw_die "unknown asset subcommand: ${_ca_action:-}" ;;
+    esac
+}
 
-cmd_config_link() {
-    [ $# -ge 2 ] || hw_die "usage: homeworld config link <src> <dest>"
-    _ccl_src="$1"
-    _ccl_dest="$2"
+cmd_config() {
+    _cc_action=${1:-}; [ $# -gt 0 ] && shift
+    case "$_cc_action" in
+        add)
+            _hw_install_context "homeworld config add"
+            [ $# -eq 1 ] || hw_die "usage: homeworld config add <source>"
+            hw_config_add "$1" "$HOMEWORLD_TARGET" "$HOMEWORLD_MODULE_NAME" >/dev/null
+            ;;
+        link)
+            _hw_install_context "homeworld config link"
+            [ $# -eq 2 ] || hw_die "usage: homeworld config link <source> <destination>"
+            hw_config_link "$1" "$2" "$HOMEWORLD_MODULE_NAME" "$HOMEWORLD_TARGET"
+            ;;
+        path)
+            [ $# -eq 1 ] || hw_die "usage: homeworld config path <module/resource>"
+            if [ -n "${HOMEWORLD_TARGET:-}" ]; then _cc_base=$HOMEWORLD_TARGET; else _cc_base=$(hw_current); fi
+            printf '%s\n' "$(hw_safe_path "$_cc_base/config" "$1")"
+            ;;
+        *) hw_die "unknown config subcommand: ${_cc_action:-}" ;;
+    esac
+}
 
-    # These are set by hw_install_module before running install.sh
-    _ccl_module="${HOMEWORLD_MODULE_NAME:-}"
-    _ccl_gen="${HOMEWORLD_TARGET:-}"
+cmd_command() {
+    _cco_action=${1:-}; [ $# -gt 0 ] && shift
+    case "$_cco_action" in
+        add)
+            _hw_install_context "homeworld command add"
+            [ $# -eq 2 ] || hw_die "usage: homeworld command add <source> <name>"
+            case "$1" in
+                /*) _cco_source=$1 ;;
+                *) _cco_source=$(hw_safe_path "$HOMEWORLD_MODULE_ROOT" "$1") || hw_die "invalid command source path" ;;
+            esac
+            hw_command_add "$_cco_source" "$2" "$HOMEWORLD_TARGET" "$HOMEWORLD_MODULE_NAME"
+            ;;
+        path)
+            [ $# -eq 1 ] || hw_die "usage: homeworld command path <name|self>"
+            if [ "$1" = self ]; then
+                [ -n "${HOMEWORLD_COMMAND_DIR:-}" ] || hw_die "command path self is only valid inside a Homeworld command"
+                printf '%s\n' "$HOMEWORLD_COMMAND_DIR"
+                return 0
+            fi
+            _cco_base=$(hw_current)
+            [ -n "${HOMEWORLD_TARGET:-}" ] && _cco_base=$HOMEWORLD_TARGET
+            _cco_found=''
+            for _cco_path in "$_cco_base/commands"/*/"$1"; do [ -d "$_cco_path" ] && { [ -z "$_cco_found" ] || hw_die "command name is ambiguous: $1"; _cco_found=$_cco_path; }; done
+            [ -n "$_cco_found" ] || hw_die "unknown Homeworld command: $1"
+            printf '%s\n' "$_cco_found"
+            ;;
+        *) hw_die "unknown command subcommand: ${_cco_action:-}" ;;
+    esac
+}
 
-    if [ -z "$_ccl_module" ] || [ -z "$_ccl_gen" ]; then
-        hw_die "'homeworld config link' must be called from within a module's install.sh"
-    fi
+cmd_state() {
+    _cs_action=${1:-}; [ $# -gt 0 ] && shift
+    case "$_cs_action" in
+        bind)
+            [ $# -eq 2 ] || hw_die "usage: homeworld state bind <name> <path>"
+            hw_state_bind_update "$1" "$2"
+            ;;
+        link)
+            _hw_install_context "homeworld state link"
+            [ $# -eq 2 ] || hw_die "usage: homeworld state link <name-or-path> <destination>"
+            hw_state_link "$1" "$2" "$HOMEWORLD_MODULE_NAME" "$HOMEWORLD_TARGET"
+            ;;
+        *) hw_die "unknown state subcommand: ${_cs_action:-}" ;;
+    esac
+}
 
-    hw_config_link "$_ccl_src" "$_ccl_dest" "$_ccl_module" "$_ccl_gen"
+cmd_generation() {
+    _cg_action=${1:-}; [ $# -gt 0 ] && shift
+    case "$_cg_action" in
+        path)
+            if [ "${1:-}" = self ]; then
+                if [ -n "${HOMEWORLD_TARGET:-}" ]; then printf '%s\n' "$HOMEWORLD_TARGET"; else printf '%s\n' "$(hw_current)"; fi
+            else
+                [ $# -eq 0 ] || hw_die "usage: homeworld generation path [self]"
+                [ -L "$(hw_current)" ] || hw_die "no active generation"
+                printf '%s\n' "$(hw_current)"
+            fi
+            ;;
+        list) hw_gen_list ;;
+        rollback) hw_gen_rollback ;;
+        gc) hw_gen_gc ;;
+        *) hw_die "unknown generation subcommand: ${_cg_action:-}" ;;
+    esac
+}
+
+cmd_module() {
+    [ "${1:-}" = path ] || hw_die "usage: homeworld module path"
+    [ -n "${HOMEWORLD_MODULE_ROOT:-}" ] || hw_die "module path is only valid during module installation"
+    printf '%s\n' "$HOMEWORLD_MODULE_ROOT"
 }
 
 # ---------------------------------------------------------------------------
@@ -795,30 +910,31 @@ cmd_doctor() {
 
 main() {
     [ $# -gt 0 ] || { usage; exit 2; }
+    _hw_ensure_dirs
+    hw_transaction_repair
 
-    # Repair any interrupted activation before doing anything else
-    hw_gen_repair
-
-    cmd="$1"; shift
+    cmd=$1; shift
     case "$cmd" in
-        init)        cmd_init "$@" ;;
-        install)     cmd_install "$@" ;;
-        list)        cmd_list "$@" ;;
-        status)      cmd_status "$@" ;;
-        update)      cmd_update "$@" ;;
-        rollback)    cmd_rollback ;;
-        generations) cmd_generations ;;
-        gc)          cmd_gc ;;
-        path)        cmd_path "$@" ;;
-        config)
-            [ "${1:-}" = "link" ] && shift && cmd_config_link "$@" \
-                || { hw_die "unknown config subcommand: ${1:-}. Use 'homeworld config link'"; }
-            ;;
-        doctor)      cmd_doctor ;;
+        init) cmd_init "$@" ;;
+        install) cmd_install "$@" ;;
+        list) cmd_list "$@" ;;
+        status) cmd_status "$@" ;;
+        update) cmd_update "$@" ;;
+        repo) cmd_repo "$@" ;;
+        asset) cmd_asset "$@" ;;
+        config) cmd_config "$@" ;;
+        command) cmd_command "$@" ;;
+        state) cmd_state "$@" ;;
+        generation) cmd_generation "$@" ;;
+        module) cmd_module "$@" ;;
+        rollback) hw_die "renamed: homeworld generation rollback" ;;
+        generations) hw_die "renamed: homeworld generation list" ;;
+        gc) hw_die "renamed: homeworld generation gc" ;;
+        path) hw_die "use the relevant resource path command" ;;
+        doctor) cmd_doctor ;;
         --version|-V) printf 'homeworld %s\n' "$HW_VERSION" ;;
-        --help|-h)   usage; exit 0 ;;
-        *)           hw_die "unknown command: $cmd. Run 'homeworld --help'" ;;
+        --help|-h) usage ;;
+        *) hw_die "unknown command: $cmd. Run 'homeworld --help'" ;;
     esac
 }
-
 main "$@"

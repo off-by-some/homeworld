@@ -1,214 +1,91 @@
 #!/bin/sh
-# install.sh — the module installation pipeline.
-#
-# Generation build order:
-#   1. hw_seed_git_assets  — copy+pull git-repo assets from previous generation
-#   Per module, in dependency order:
-#   2. hw_install_assets   — copy static source assets into generation
-#   3. hw_install_commands — deploy commands and generate launchers
-#   4. install.sh hook     — arbitrary per-module setup
-#
-# Commands from already-installed modules are on PATH by the time each
-# module's install.sh runs, so transitive deps can provide tools.
+# install.sh — build one pending generation from small resource primitives.
 
-# hw_seed_git_assets gen_path
-# Seed git-repo assets from the active generation into the pending one and
-# update them via git pull. Runs once before any module's install.sh so that
-# install.sh only needs to handle the first-time clone — subsequent installs
-# get the existing repo copied forward and updated automatically.
-#
-# Only directories containing a .git subdirectory are treated as git assets.
-# Module-namespaced static asset dirs (e.g. assets/zsh/) are plain directories
-# without .git and are left alone.
-hw_seed_git_assets() {
-    _hsga_gen="$1"
-    _hsga_prev="$(hw_current)/assets"
-
-    [ -d "$_hsga_prev" ] || return 0
-
-    for _hsga_item in "$_hsga_prev"/*/; do
-        [ -d "$_hsga_item/.git" ] || continue
-        _hsga_name=$(basename "$_hsga_item")
-        _hsga_target="$_hsga_gen/assets/$_hsga_name"
-
-        [ -d "$_hsga_target" ] && continue
-
-        hw_log "  updating $_hsga_name..."
-        cp -r "$_hsga_item" "$_hsga_target"
-        git -C "$_hsga_target" pull --ff-only 2>/dev/null || \
-            hw_log "  warning: could not update $_hsga_name — kept previous version"
-    done
-}
-
-# hw_install_assets moddir name gen_path
-# Copy module's assets/ tree into the generation, namespaced by module name.
 hw_install_assets() {
-    _hia_moddir="$1"
-    _hia_name="$2"
-    _hia_gen="$3"
-
-    _hia_path=$(hw_module_get "$_hia_moddir" "$_hia_name" "path")
-    _hia_src="$_hia_path/assets"
-    _hia_dest="$_hia_gen/assets/$_hia_name"
-
-    # No assets directory is fine — many modules only provide commands
-    [ -d "$_hia_src" ] || return 0
-
-    mkdir -p "$_hia_dest"
-    cp -r "$_hia_src/." "$_hia_dest/"
-}
-
-# hw_install_commands moddir name gen_path
-# Copy each command directory and generate a launcher in gen_path/bin/.
-hw_install_commands() {
-    _hic_moddir="$1"
-    _hic_name="$2"
-    _hic_gen="$3"
-
-    _hic_path=$(hw_module_get "$_hic_moddir" "$_hic_name" "path")
-    _hic_cmd_src="$_hic_path/commands"
-
-    [ -d "$_hic_cmd_src" ] || return 0
-
-    for _hic_cmd_dir in "$_hic_cmd_src"/*/; do
-        [ -d "$_hic_cmd_dir" ] || continue
-        _hic_cmd_name=$(basename "$_hic_cmd_dir")
-
-        # Validate command directory name
-        _hic_name_bad=$(printf '%s' "$_hic_cmd_name" | tr -d 'a-z0-9._-')
-        _hic_first_bad=$(printf '%s' "$_hic_cmd_name" | cut -c1 | tr -d 'a-z0-9')
-        if [ -n "$_hic_name_bad" ] || [ -n "$_hic_first_bad" ]; then
-            hw_die "invalid command name '$_hic_cmd_name' in module '$_hic_name'" \
-                   "Command directory names must match [a-z0-9][a-z0-9._-]*."
-        fi
-
-        # Require an executable run file
-        if [ ! -f "$_hic_cmd_dir/run" ]; then
-            hw_die "command '$_hic_cmd_name' in module '$_hic_name' is missing a run file" \
-                   "Create an executable file at commands/$_hic_cmd_name/run."
-        fi
-        if [ ! -x "$_hic_cmd_dir/run" ]; then
-            hw_die "commands/$_hic_cmd_name/run in module '$_hic_name' is not executable" \
-                   "Fix with: chmod +x <module-path>/commands/$_hic_cmd_name/run"
-        fi
-
-        # Deploy the entire command directory
-        _hic_dest_dir="$_hic_gen/commands/$_hic_name/$_hic_cmd_name"
-        mkdir -p "$_hic_dest_dir"
-        cp -r "$_hic_cmd_dir/." "$_hic_dest_dir/"
-
-        # Generate a PATH-visible launcher
-        hw_make_launcher "$_hic_gen/bin/$_hic_cmd_name" "$_hic_dest_dir"
+    _hia_moddir=$1; _hia_name=$2; _hia_gen=$3
+    _hia_path=$(hw_module_get "$_hia_moddir" "$_hia_name" path)
+    [ -d "$_hia_path/assets" ] || return 0
+    for _hia_item in "$_hia_path/assets"/*; do
+        [ -e "$_hia_item" ] || [ -L "$_hia_item" ] || continue
+        HOMEWORLD_MODULE_ROOT="$_hia_path" hw_asset_add "$_hia_item" "$(basename "$_hia_item")" "$_hia_gen" "$_hia_name"
     done
 }
 
-# hw_make_launcher launcher_path command_dir
-# Write a thin shell wrapper that sets HOMEWORLD_COMMAND_DIR and execs run.
-# The launcher is what ends up on PATH; the command dir is where the files live.
+hw_command_add() {
+    _hca_source=$1; _hca_name=$2; _hca_gen=$3; _hca_module=$4
+    hw_validate_name "$_hca_name" "command name"
+    _hca_dest="$_hca_gen/commands/$_hca_module/$_hca_name"
+    if [ -d "$_hca_source" ]; then
+        [ -f "$_hca_source/run" ] || hw_die "command $_hca_name is missing an executable run file"
+        [ -x "$_hca_source/run" ] || hw_die "command $_hca_name run file is not executable"
+        hw_copy_resource "$_hca_source" "$_hca_dest"
+    else
+        [ -f "$_hca_source" ] && [ -x "$_hca_source" ] || hw_die "command source must be an executable file or command directory"
+        mkdir -p "$_hca_dest"
+        cp "$_hca_source" "$_hca_dest/run" || hw_die "could not stage command"
+        chmod +x "$_hca_dest/run"
+    fi
+    [ ! -e "$_hca_gen/bin/$_hca_name" ] || hw_die "command name conflict: $_hca_name"
+    hw_make_launcher "$_hca_gen/bin/$_hca_name" "$_hca_dest"
+}
+
+hw_install_commands() {
+    _hic_moddir=$1; _hic_name=$2; _hic_gen=$3
+    _hic_path=$(hw_module_get "$_hic_moddir" "$_hic_name" path)
+    [ -d "$_hic_path/commands" ] || return 0
+    for _hic_item in "$_hic_path/commands"/*; do
+        [ -d "$_hic_item" ] || continue
+        hw_command_add "$_hic_item" "$(basename "$_hic_item")" "$_hic_gen" "$_hic_name"
+    done
+}
+
 hw_make_launcher() {
-    _hml_launcher="$1"
-    _hml_cmd_dir="$2"
-
-    # Using a here-doc would require bash; printf is POSIX-clean.
-    printf '#!/bin/sh\n' > "$_hml_launcher"
-    printf '# Generated by homeworld — do not edit\n' >> "$_hml_launcher"
-    printf 'export HOMEWORLD_COMMAND_DIR="%s"\n' "$_hml_cmd_dir" >> "$_hml_launcher"
-    printf 'exec "%s/run" "$@"\n' "$_hml_cmd_dir" >> "$_hml_launcher"
-
+    _hml_launcher=$1; _hml_dir=$2
+    mkdir -p "$(dirname "$_hml_launcher")"
+    {
+        printf '#!/bin/sh\n'
+        printf '# Generated by Homeworld.\n'
+        printf 'export HOMEWORLD_COMMAND_DIR=%s\n' "$(printf "'%s'" "$(printf '%s' "$_hml_dir" | sed "s/'/'\\\\''/g")")"
+        printf 'exec "$HOMEWORLD_COMMAND_DIR/run" "$@"\n'
+    } > "$_hml_launcher"
     chmod +x "$_hml_launcher"
 }
 
-# hw_install_packages provider package_list_file
-# Install packages from a file, deduplicating first, then invoking the provider once.
 hw_install_packages() {
-    _hip_provider="$1"
-    _hip_file="$2"
-
+    _hip_provider=$1; _hip_file=$2
     [ -f "$_hip_file" ] || return 0
-
-    # Read packages, strip blanks and comments, sort+uniq to deduplicate
     _hip_packages=$(grep -v '^[[:space:]]*$' "$_hip_file" | grep -v '^[[:space:]]*#' | sort -u)
     [ -n "$_hip_packages" ] || return 0
-
-    hw_log ""
     hw_log "Planning packages through $_hip_provider:"
-    printf '%s\n' "$_hip_packages" | while read -r _hip_pkg; do
-        hw_log "  $_hip_pkg"
-    done
-    hw_log ""
-
-    # Build a flat argument list to pass to the package manager
-    _hip_pkg_args=$(printf '%s\n' "$_hip_packages" | tr '\n' ' ')
-
+    printf '%s\n' "$_hip_packages" | while IFS= read -r _hip_package; do hw_log "  $_hip_package"; done
+    _hip_args=$(printf '%s\n' "$_hip_packages" | tr '\n' ' ')
     case "$_hip_provider" in
-        pacman)
-            # shellcheck disable=SC2086
-            sudo pacman -S --needed --noconfirm $_hip_pkg_args
-            ;;
-        apt)
-            # shellcheck disable=SC2086
-            sudo apt-get install -y $_hip_pkg_args
-            ;;
-        dnf)
-            # shellcheck disable=SC2086
-            sudo dnf install -y $_hip_pkg_args
-            ;;
-        brew)
-            # shellcheck disable=SC2086
-            brew install $_hip_pkg_args
-            ;;
-        *)
-            hw_die "unknown package provider: $_hip_provider"
-            ;;
+        pacman) sudo pacman -S --needed --noconfirm $_hip_args ;;
+        apt) sudo apt-get install -y $_hip_args ;;
+        dnf) sudo dnf install -y $_hip_args ;;
+        brew) brew install $_hip_args ;;
+        *) hw_die "unknown package provider: $_hip_provider" ;;
     esac
 }
 
-# hw_install_module moddir name gen_path platform distro
-# Install a single module into the pending generation.
 hw_install_module() {
-    _him_moddir="$1"
-    _him_name="$2"
-    _him_gen="$3"
-    _him_platform="$4"
-    _him_distro="$5"
-
-    _him_path=$(hw_module_get "$_him_moddir" "$_him_name" "path")
-
+    _him_moddir=$1; _him_name=$2; _him_gen=$3; _him_platform=$4; _him_distro=$5
+    _him_path=$(hw_module_get "$_him_moddir" "$_him_name" path)
     hw_log "  installing $_him_name..."
-
-    # Step 1: copy assets into generation
     hw_install_assets "$_him_moddir" "$_him_name" "$_him_gen"
-
-    # Step 2: copy commands and generate launchers
     hw_install_commands "$_him_moddir" "$_him_name" "$_him_gen"
-
-    # Step 3: run the module's post-install script if present
-    _him_install_script="$_him_path/install.sh"
-    if [ -f "$_him_install_script" ]; then
-        # Expose stable runtime paths. HOMEWORLD_ROOT always points at current/
-        # so that configs written during install.sh don't embed pending paths.
-        # HOMEWORLD_TARGET_* lets install.sh inspect the in-progress generation.
-        _him_hw_root="$(hw_current)"
-
-        # Prepend the pending generation's bin to PATH so commands installed
-        # by dependencies in this same run are already available. We also
-        # prepend HW_SELF_BIN (set by the main binary to its own directory)
-        # so that 'homeworld' is callable from install.sh even when ~/.local/bin
-        # isn't on the user's PATH yet.
-        _him_self_bin="${HW_SELF_BIN:-}"
-        HOMEWORLD_MODULE_ROOT="$_him_path" \
-        HOMEWORLD_MODULE_NAME="$_him_name" \
-        HOMEWORLD_PLATFORM="$_him_platform" \
-        HOMEWORLD_DISTRO="$_him_distro" \
-        HOMEWORLD_ROOT="$_him_hw_root" \
-        HOMEWORLD_ASSETS="$_him_hw_root/assets" \
-        HOMEWORLD_BIN="$_him_hw_root/bin" \
-        HOMEWORLD_TARGET="$_him_gen" \
-        HOMEWORLD_TARGET_ASSETS="$_him_gen/assets" \
-        HOMEWORLD_TARGET_BIN="$_him_gen/bin" \
-        PATH="${_him_self_bin:+$_him_self_bin:}$_him_gen/bin:$PATH" \
-            sh "$_him_install_script" \
-                || hw_die "install.sh failed for module '$_him_name'" \
-                          "The generation was not activated — no changes were applied to your system. Fix the error above and run 'homeworld install' again."
-    fi
+    _him_script="$_him_path/install.sh"
+    [ -f "$_him_script" ] || return 0
+    _him_self_bin=${HW_SELF_BIN:-}
+    HOMEWORLD_MODULE_ROOT="$_him_path" \
+    HOMEWORLD_MODULE_NAME="$_him_name" \
+    HOMEWORLD_PLATFORM="$_him_platform" \
+    HOMEWORLD_DISTRO="$_him_distro" \
+    HOMEWORLD_ROOT="$(hw_current)" \
+    HOMEWORLD_BIN="$(hw_current)/bin" \
+    HOMEWORLD_TARGET="$_him_gen" \
+    HOMEWORLD_TARGET_BIN="$_him_gen/bin" \
+    PATH="${_him_self_bin:+$_him_self_bin:}$_him_gen/bin:$PATH" \
+        sh "$_him_script" || hw_die "install.sh failed for module $_him_name" \
+            "The pending generation was not activated."
 }
