@@ -7,26 +7,28 @@ _LIB_DIR=$(cd "$_TESTS_DIR/../lib/homeworld" && pwd)
 
 if [ $# -eq 0 ]; then
     _runner=${HOMEWORLD_TEST_SHELL:-sh}
-    _failed=0
 
     # Run test files one at a time. Several suites exercise process signals,
-    # locks, and temporary filesystem state. Running them concurrently makes
-    # failures depend on scheduling and can cause a successful child to be
-    # reported as failed by shells with different job-control behavior.
+    # locks, and temporary filesystem state, so concurrent execution is not
+    # deterministic across shells and operating systems.
     for _file in "$_TESTS_DIR"/test_*.sh; do
         [ -f "$_file" ] || continue
         _test_name=$(basename "$_file")
 
         # Intentional word splitting allows HOMEWORLD_TEST_SHELL="busybox ash".
         # shellcheck disable=SC2086
-        if ! $_runner "$0" "$_test_name"; then
-            printf '\nrun.sh: %s failed under %s\n' \
-                "$_test_name" "$_runner" >&2
-            _failed=1
+        $_runner "$0" "$_test_name"
+        _status=$?
+
+        if [ "$_status" -ne 0 ]; then
+            printf '\nrun.sh: %s failed under %s with status %s\n' \
+                "$_test_name" "$_runner" "$_status" >&2
+            exit "$_status"
         fi
     done
 
-    exit "$_failed"
+    printf '\nrun.sh: all test files passed under %s\n' "$_runner" >&2
+    exit 0
 fi
 
 # Always test the binary from this checkout. A developer may already have an

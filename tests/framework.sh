@@ -104,6 +104,7 @@ t_summary() {
     printf '\n'
     if [ "$_T_FAIL" = "0" ]; then
         printf '%s%d passed, 0 failed%s\n' "$_HW_C_OK" "$_T_PASS" "$_HW_C_RST" >&2
+        return 0
     else
         printf '%d passed, %s%d failed%s\n' \
             "$_T_PASS" "$_HW_C_ERR" "$_T_FAIL" "$_HW_C_RST" >&2
