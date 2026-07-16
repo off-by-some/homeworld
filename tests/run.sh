@@ -8,37 +8,24 @@ _LIB_DIR=$(cd "$_TESTS_DIR/../lib/homeworld" && pwd)
 if [ $# -eq 0 ]; then
     _runner=${HOMEWORLD_TEST_SHELL:-sh}
     _failed=0
-    _run_tmp=$(mktemp -d)
-    _jobs="$_run_tmp/jobs"
-    : > "$_jobs"
-    _index=0
-    _batch=0
 
-    _wait_batch() {
-        while IFS='|' read -r _pid _log; do
-            [ -n "$_pid" ] || continue
-            wait "$_pid" || _failed=1
-            cat "$_log"
-        done < "$_jobs"
-        : > "$_jobs"
-        _batch=0
-    }
-
+    # Run test files one at a time. Several suites exercise process signals,
+    # locks, and temporary filesystem state. Running them concurrently makes
+    # failures depend on scheduling and can cause a successful child to be
+    # reported as failed by shells with different job-control behavior.
     for _file in "$_TESTS_DIR"/test_*.sh; do
         [ -f "$_file" ] || continue
-        _index=$((_index + 1))
-        _batch=$((_batch + 1))
-        _log="$_run_tmp/$_index.log"
-        # Test files use isolated temporary roots, so small parallel batches are safe.
+        _test_name=$(basename "$_file")
+
         # Intentional word splitting allows HOMEWORLD_TEST_SHELL="busybox ash".
         # shellcheck disable=SC2086
-        $_runner "$0" "$(basename "$_file")" > "$_log" 2>&1 &
-        printf '%s|%s
-' "$!" "$_log" >> "$_jobs"
-        [ "$_batch" -lt 3 ] || _wait_batch
+        if ! $_runner "$0" "$_test_name"; then
+            printf '\nrun.sh: %s failed under %s\n' \
+                "$_test_name" "$_runner" >&2
+            _failed=1
+        fi
     done
-    [ "$_batch" -eq 0 ] || _wait_batch
-    rm -rf "$_run_tmp"
+
     exit "$_failed"
 fi
 
