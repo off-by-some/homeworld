@@ -11,7 +11,9 @@ section "hostile but supported paths"
 setup_env
 module="$_T_TMP/module with spaces"; mkdir -p "$module/config"; printf value > "$module/config/file"
 HOMEWORLD_MODULE_ROOT="$module"; export HOMEWORLD_MODULE_ROOT
-unicode_suffix=$(printf '\303\274')
+# Keep the UTF-8 bytes literal. Shell printf implementations disagree about
+# backslash-octal escapes that do not use the POSIX \0ddd form.
+unicode_suffix='ü'
 gen=$(hw_gen_new); dest="$_T_TMP/path with spaces [*] $unicode_suffix"
 hw_config_link config/file "$dest" mod "$gen"; hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
 assert_link "$dest" "$(hw_current)/config/mod/file" "hostile destination link is created exactly"
