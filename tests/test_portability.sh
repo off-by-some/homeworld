@@ -11,9 +11,10 @@ section "hostile but supported paths"
 setup_env
 module="$_T_TMP/module with spaces"; mkdir -p "$module/config"; printf value > "$module/config/file"
 HOMEWORLD_MODULE_ROOT="$module"; export HOMEWORLD_MODULE_ROOT
-# Generate the UTF-8 bytes for ü without relying on shell-specific
-# printf escape handling or source-file locale assumptions.
-unicode_suffix=$(awk 'BEGIN { printf "%c%c", 195, 188 }')
+# Generate the UTF-8 bytes for ü as bytes, not as awk characters.
+# POSIX printf defines \ddd in the format string as a byte; LC_ALL=C
+# avoids multibyte-locale implementations re-encoding octal escapes.
+unicode_suffix=$(LC_ALL=C printf '\303\274')
 gen=$(hw_gen_new); dest="$_T_TMP/path with spaces [*] $unicode_suffix"
 hw_config_add config/file file "$gen" mod; hw_config_link file "$dest" mod "$gen"; hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
 assert_link "$dest" "$(hw_current)/config/mod/file" "hostile destination link is created exactly"
