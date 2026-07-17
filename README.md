@@ -104,22 +104,10 @@ Two verbs recur across the primitive resources, and they always mean the same th
 
 Declarations live in a module's `install.sh`, which is plain shell — no template language, no DSL. Conventional directories like `config/` and `commands/` are shorthand that feeds these same primitives; the primitives are the real API, and the layout is just a tidy place to keep their inputs.
 
-When Homeworld plans an install, it prints a grepable table. Nested modules are indented in the module column, but the status token stays fixed:
-
-```text
-Module plan:
-  STATUS   MODULE                DETAILS
-  -------  ------                -------
-  INSTALL  docker                Docker utilities
-  INSTALL    docker-linux        Docker on Linux
-  SKIP       docker-macos        unsupported on linux
-```
-
-Errors use the same idea: `homeworld: ERROR` for the problem and `homeworld: HINT` for the next step.
 
 ## Config — files you maintain
 
-The Quick Start already showed the essential move:
+The Quick Start already showed the concept:
 
 ```sh
 homeworld config add config/.zshrc zshrc

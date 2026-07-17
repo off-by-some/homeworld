@@ -28,8 +28,8 @@ source_dir="$_T_TMP/source"
 make_module "$source_dir" root
 make_module "$source_dir/tools/docker" docker 'HOMEWORLD_DESCRIPTION="Docker utilities"'
 make_module "$source_dir/tools/docker/linux" docker-linux 'HOMEWORLD_DESCRIPTION="Docker on Linux"'
-make_module "$source_dir/tools/docker/macos" docker-macos 'HOMEWORLD_DESCRIPTION="Docker on macOS"
-HOMEWORLD_PLATFORMS="macos"'
+make_module "$source_dir/tools/docker/macos" docker-macos 'HOMEWORLD_DESCRIPTION="Docker alternate platform"
+HOMEWORLD_DISTROS="homeworld-test-distro-that-should-never-match"'
 make_module "$source_dir/tools/node" node 'HOMEWORLD_DESCRIPTION="Node runtime"'
 
 hw_cli install --dry-run --source "$source_dir" >"$_T_TMP/plan" 2>&1
@@ -38,8 +38,9 @@ assert_contains "$_T_TMP/plan" "Module plan:" "plan heading is present"
 assert_contains "$_T_TMP/plan" "STATUS" "plan has status header"
 assert_contains "$_T_TMP/plan" "INSTALL  docker" "top-level module appears without nesting indent"
 assert_contains "$_T_TMP/plan" "INSTALL    docker-linux" "nested module appears indented in module column"
-assert_contains "$_T_TMP/plan" "SKIP       docker-macos" "skipped nested module keeps grepable status"
-assert_contains "$_T_TMP/plan" "unsupported on linux" "skip reason is shown"
+assert_contains "$_T_TMP/plan" "SKIP" "plan includes skipped status"
+assert_contains "$_T_TMP/plan" "docker-macos" "skipped nested module name is shown"
+assert_contains "$_T_TMP/plan" "distro" "skip reason is shown"
 teardown_cli_env
 
 section "list writes the module table to stdout"
