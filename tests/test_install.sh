@@ -7,7 +7,8 @@ source_dir="$_T_TMP/source"; make_module "$source_dir" root
 mkdir -p "$source_dir/config"; printf first > "$source_dir/config/value"
 cat > "$source_dir/install.sh" <<EOF2
 #!/bin/sh
-homeworld config link config/value "$_T_TMP/home/config-link"
+homeworld config add config/value value
+homeworld config link value "$_T_TMP/home/config-link"
 homeworld repo add "$repo" tools --ref "$branch"
 homeworld repo link tools "$_T_TMP/home/tools"
 EOF2
@@ -37,7 +38,8 @@ source_dir="$_T_TMP/source"; make_module "$source_dir" root
 mkdir -p "$source_dir/config"; printf good > "$source_dir/config/value"
 cat > "$source_dir/install.sh" <<EOF2
 #!/bin/sh
-homeworld config link config/value "$_T_TMP/home/value"
+homeworld config add config/value value
+homeworld config link value "$_T_TMP/home/value"
 EOF2
 chmod +x "$source_dir/install.sh"
 hw_cli init "$source_dir" >/dev/null 2>&1

@@ -9,7 +9,7 @@ HW_DATA="$base/data"; HW_STATE="$state_base"; HW_CACHE="$base/cache"; export HW_
 mkdir -p "$HW_DATA/generations" "$HW_STATE/locks" "$HW_CACHE"
 module="$base/module"; mkdir -p "$module/config"; printf cross > "$module/config/file"
 HOMEWORLD_MODULE_ROOT="$module"; export HOMEWORLD_MODULE_ROOT
-gen=$(hw_gen_new); destination="$state_base/external"; hw_config_link config/file "$destination" mod "$gen"; hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
+gen=$(hw_gen_new); destination="$state_base/external"; hw_config_add config/file file "$gen" mod; hw_config_link file "$destination" mod "$gen"; hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
 assert_eq "$(cat "$destination")" cross "cross-filesystem destination works"
 assert_link "$destination" "$(hw_current)/config/mod/file" "temporary link is created beside destination"
 HW_DATA=$old_data; HW_STATE=$old_state; HW_CACHE=$old_cache; export HW_DATA HW_STATE HW_CACHE

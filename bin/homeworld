@@ -37,48 +37,50 @@ export HW_SELF_BIN
 
 usage() {
     cat >&2 <<'EOF'
-Usage: homeworld <command> [options]
+Usage:
+  homeworld <command> [arguments]
 
-Initialization:
-  init <path|url>
+Common commands:
+  homeworld init <path|url>                         remember a setup source
+  homeworld install [module] [--dry-run] [--yes]    build and activate a generation
+  homeworld list                                    show modules and skip reasons
+  homeworld status                                  show active generation paths
+  homeworld doctor                                  check local setup health
+  homeworld update [--dependencies] [--install]     refresh source and optionally install
 
-Installation:
-  install [module] [--dry-run] [--reinstall] [--yes]
-  list
-  status
-  doctor
-
-Updates:
-  update [--dependencies] [--install]
+Resource lifecycle:
+  add   snapshot or register a named resource in the pending generation
+  link  expose an already-named resource at a managed destination
+  path  print the generation-aware path for a named resource
 
 Resources:
-  repo add <source> <namespace> [--ref <ref>]
-  repo link <namespace> <destination>
-  repo path <namespace>
-  repo update <namespace|--all>
+  homeworld repo add <source> <namespace> [--ref <ref>]
+  homeworld repo link <namespace> <destination>
+  homeworld repo path <namespace>
+  homeworld repo update <namespace|--all>
 
-  asset add <source> <name>
-  asset link <source> <name> <destination>
-  asset path <module/name>
+  homeworld config add <source> <name>
+  homeworld config link <name> <destination>
+  homeworld config path <module/name>
 
-  config add <source>
-  config link <source> <destination>
-  config path <module/resource>
+  homeworld asset add <source> <name>
+  homeworld asset link <name> <destination>
+  homeworld asset path <module/name>
 
-  command add <source> <name>
-  command path <name|self>
+  homeworld command add <source> <name>
+  homeworld command path <name|self>
 
-  state bind <name> <path>
-  state link <name-or-path> <destination>
+  homeworld state bind <name> <path>
+  homeworld state link <name-or-path> <destination>
 
 Generations:
-  generation path [self]
-  generation list
-  generation rollback
-  generation gc
+  homeworld generation path [self]
+  homeworld generation list
+  homeworld generation rollback
+  homeworld generation gc
 
-Context:
-  module path
+Install-hook context:
+  homeworld module path
 EOF
 }
 
@@ -183,6 +185,73 @@ _hw_resolve_deps() {
     done
 
     printf '%s' "${_hwrd_result# }"
+}
+
+
+# _hw_module_plan_record moddir name platform distro provider root_name
+# Print: STATUS<TAB>DETAIL<TAB>APPLICABLE<TAB>DEFAULT_INSTALL
+# APPLICABLE means a targeted install may request the module. DEFAULT_INSTALL
+# additionally accounts for HOMEWORLD_AUTO_INSTALL.
+_hw_module_plan_record() {
+    _hwmpr_moddir="$1"
+    _hwmpr_name="$2"
+    _hwmpr_platform="$3"
+    _hwmpr_distro="$4"
+    _hwmpr_provider="$5"
+    _hwmpr_root_name="$6"
+
+    _hwmpr_reason=$(hw_module_applicable "$_hwmpr_moddir" "$_hwmpr_name" "$_hwmpr_platform" "$_hwmpr_distro")
+    _hwmpr_ok=$?
+    if [ "$_hwmpr_ok" != "0" ]; then
+        printf 'SKIP\t%s\t0\t0\n' "$_hwmpr_reason"
+        return 0
+    fi
+
+    _hwmpr_path=$(hw_module_get "$_hwmpr_moddir" "$_hwmpr_name" "path")
+    if [ -d "$_hwmpr_path/packages" ] && [ -n "$_hwmpr_provider" ]; then
+        if [ ! -f "$_hwmpr_path/packages/${_hwmpr_provider}.txt" ]; then
+            printf 'SKIP\tno package file for %s\t0\t0\n' "$_hwmpr_provider"
+            return 0
+        fi
+    elif [ -d "$_hwmpr_path/packages" ] && [ -z "$_hwmpr_provider" ]; then
+        printf 'SKIP\tno package provider for this distro\t0\t0\n'
+        return 0
+    fi
+
+    _hwmpr_auto=$(hw_module_get "$_hwmpr_moddir" "$_hwmpr_name" "auto_install")
+    if [ "$_hwmpr_name" = "$_hwmpr_root_name" ] || [ "${_hwmpr_auto:-true}" != "false" ]; then
+        _hwmpr_desc=$(hw_module_get "$_hwmpr_moddir" "$_hwmpr_name" "description")
+        printf 'INSTALL\t%s\t1\t1\n' "$_hwmpr_desc"
+    else
+        printf 'SKIP\tauto_install=false\t1\t0\n'
+    fi
+}
+
+# _hw_print_module_header width
+_hw_print_module_header() {
+    _hwpmh_width="$1"
+    printf '  %s%-7s%s  %-*s  %s\n' \
+        "$_HW_C_BOLD" "STATUS" "$_HW_C_RST" "$_hwpmh_width" "MODULE" "DETAILS"
+    printf '  %-7s  %-*s  %s\n' \
+        "-------" "$_hwpmh_width" "------" "-------"
+}
+
+# _hw_print_module_row status display_name detail width
+_hw_print_module_row() {
+    _hwpmr_status="$1"
+    _hwpmr_display="$2"
+    _hwpmr_detail="$3"
+    _hwpmr_width="$4"
+
+    case "$_hwpmr_status" in
+        INSTALL) _hwpmr_color=$_HW_C_OK ;;
+        SKIP)    _hwpmr_color=$_HW_C_WARN ;;
+        *)       _hwpmr_color=$_HW_C_BOLD ;;
+    esac
+
+    printf '  %s%-7s%s  %-*s  %s\n' \
+        "$_hwpmr_color" "$_hwpmr_status" "$_HW_C_RST" \
+        "$_hwpmr_width" "$_hwpmr_display" "$_hwpmr_detail"
 }
 
 # ---------------------------------------------------------------------------
@@ -321,46 +390,27 @@ cmd_install() {
         fi
     fi
 
-    # Filter modules by platform/distro and show INSTALL/SKIP table
+    # Filter modules by platform/distro/provider and show a grepable plan.
+    # Nested module paths are indented in the MODULE column, while STATUS stays
+    # fixed so `grep INSTALL` and `grep SKIP` remain useful.
     hw_log ""
     hw_log "Module plan:"
     _ci_applicable=""
-    _ci_col_width=16  # minimum width for the module name column
+    _ci_col_width=$(hw_module_display_width "$_ci_moddir" "$_ci_all_names" 20)
+    _hw_print_module_header "$_ci_col_width" >&2
 
     for _ci_n in $_ci_all_names; do
-        _ci_reason=$(hw_module_applicable "$_ci_moddir" "$_ci_n" "$_ci_platform" "$_ci_distro")
-        _ci_is_applicable=$?
-        _ci_desc=$(hw_module_get "$_ci_moddir" "$_ci_n" "description")
+        _ci_record=$(_hw_module_plan_record \
+            "$_ci_moddir" "$_ci_n" "$_ci_platform" "$_ci_distro" \
+            "${_ci_provider:-}" "$_ci_root_name")
+        _ci_status=$(printf '%s' "$_ci_record" | cut -f1)
+        _ci_detail=$(printf '%s' "$_ci_record" | cut -f2)
+        _ci_is_applicable=$(printf '%s' "$_ci_record" | cut -f3)
 
-        if [ "$_ci_is_applicable" = "0" ]; then
-            # Check provider applicability: if packages/ exists but no file for
-            # our provider, the module is not portable to this system.
-            _ci_n_path=$(hw_module_get "$_ci_moddir" "$_ci_n" "path")
-            if [ -d "$_ci_n_path/packages" ] && [ -n "$_ci_provider" ]; then
-                if [ ! -f "$_ci_n_path/packages/${_ci_provider}.txt" ]; then
-                    printf '  %sSKIP%s     %-16s no package file for %s\n' \
-                        "$_HW_C_WARN" "$_HW_C_RST" "$_ci_n" "$_ci_provider" >&2
-                    continue
-                fi
-            elif [ -d "$_ci_n_path/packages" ] && [ -z "$_ci_provider" ]; then
-                printf '  %sSKIP%s     %-16s no package provider for this distro\n' \
-                    "$_HW_C_WARN" "$_HW_C_RST" "$_ci_n" >&2
-                continue
-            fi
+        [ "$_ci_is_applicable" = "1" ] && _ci_applicable="$_ci_applicable $_ci_n"
 
-            _ci_auto=$(hw_module_get "$_ci_moddir" "$_ci_n" "auto_install")
-            _ci_applicable="$_ci_applicable $_ci_n"
-            if [ "$_ci_n" = "$_ci_root_name" ] || [ "${_ci_auto:-true}" != "false" ]; then
-                printf '  %sINSTALL%s  %-16s %s\n' \
-                    "$_HW_C_OK" "$_HW_C_RST" "$_ci_n" "$_ci_desc" >&2
-            else
-                printf '  %sSKIP%s     %-16s auto_install=false\n' \
-                    "$_HW_C_WARN" "$_HW_C_RST" "$_ci_n" >&2
-            fi
-        else
-            printf '  %sSKIP%s     %-16s %s\n' \
-                "$_HW_C_WARN" "$_HW_C_RST" "$_ci_n" "$_ci_reason" >&2
-        fi
+        _ci_display=$(hw_module_display_name "$_ci_moddir" "$_ci_n" "$_ci_all_names")
+        _hw_print_module_row "$_ci_status" "$_ci_display" "$_ci_detail" "$_ci_col_width" >&2
     done
     _ci_applicable="${_ci_applicable# }"
     hw_log ""
@@ -528,19 +578,26 @@ cmd_list() {
     _cl_all=$(hw_module_discover "$_cl_source" "$_cl_moddir") \
         || exit 1  # error already printed by hw_module_discover
 
-    printf '%s%-8s%s %-20s %s\n' "$_HW_C_BOLD" "STATUS" "$_HW_C_RST" "MODULE" "DESCRIPTION"
-    printf '%s\n' "-------- -------------------- ------------------------------"
+    _cl_root_name=""
+    for _cl_n in $_cl_all; do
+        _cl_n_path=$(hw_module_get "$_cl_moddir" "$_cl_n" "path")
+        if [ "$_cl_n_path" = "$_cl_source" ]; then
+            _cl_root_name="$_cl_n"
+            break
+        fi
+    done
+
+    _cl_col_width=$(hw_module_display_width "$_cl_moddir" "$_cl_all" 20)
+    _hw_print_module_header "$_cl_col_width"
 
     for _cl_n in $_cl_all; do
-        _cl_reason=$(hw_module_applicable "$_cl_moddir" "$_cl_n" "$_cl_platform" "$_cl_distro")
-        _cl_ok=$?
-        _cl_desc=$(hw_module_get "$_cl_moddir" "$_cl_n" "description")
-
-        if [ "$_cl_ok" = "0" ]; then
-            printf '%sINSTALL%s  %-20s %s\n' "$_HW_C_OK" "$_HW_C_RST" "$_cl_n" "$_cl_desc"
-        else
-            printf '%sSKIP%s     %-20s %s\n' "$_HW_C_WARN" "$_HW_C_RST" "$_cl_n" "$_cl_reason"
-        fi
+        _cl_record=$(_hw_module_plan_record \
+            "$_cl_moddir" "$_cl_n" "$_cl_platform" "$_cl_distro" \
+            "${_cl_provider:-}" "$_cl_root_name")
+        _cl_status=$(printf '%s' "$_cl_record" | cut -f1)
+        _cl_detail=$(printf '%s' "$_cl_record" | cut -f2)
+        _cl_display=$(hw_module_display_name "$_cl_moddir" "$_cl_n" "$_cl_all")
+        _hw_print_module_row "$_cl_status" "$_cl_display" "$_cl_detail" "$_cl_col_width"
     done
 }
 
@@ -718,8 +775,8 @@ cmd_asset() {
             ;;
         link)
             _hw_install_context "homeworld asset link"
-            [ $# -eq 3 ] || hw_die "usage: homeworld asset link <source> <name> <destination>"
-            hw_asset_link "$1" "$2" "$3" "$HOMEWORLD_TARGET" "$HOMEWORLD_MODULE_NAME"
+            [ $# -eq 2 ] || hw_die "usage: homeworld asset link <name> <destination>"
+            hw_asset_link "$1" "$2" "$HOMEWORLD_TARGET" "$HOMEWORLD_MODULE_NAME"
             ;;
         path)
             [ $# -eq 1 ] || hw_die "usage: homeworld asset path <module/name>"
@@ -735,16 +792,16 @@ cmd_config() {
     case "$_cc_action" in
         add)
             _hw_install_context "homeworld config add"
-            [ $# -eq 1 ] || hw_die "usage: homeworld config add <source>"
-            hw_config_add "$1" "$HOMEWORLD_TARGET" "$HOMEWORLD_MODULE_NAME" >/dev/null
+            [ $# -eq 2 ] || hw_die "usage: homeworld config add <source> <name>"
+            hw_config_add "$1" "$2" "$HOMEWORLD_TARGET" "$HOMEWORLD_MODULE_NAME"
             ;;
         link)
             _hw_install_context "homeworld config link"
-            [ $# -eq 2 ] || hw_die "usage: homeworld config link <source> <destination>"
+            [ $# -eq 2 ] || hw_die "usage: homeworld config link <name> <destination>"
             hw_config_link "$1" "$2" "$HOMEWORLD_MODULE_NAME" "$HOMEWORLD_TARGET"
             ;;
         path)
-            [ $# -eq 1 ] || hw_die "usage: homeworld config path <module/resource>"
+            [ $# -eq 1 ] || hw_die "usage: homeworld config path <module/name>"
             if [ -n "${HOMEWORLD_TARGET:-}" ]; then _cc_base=$HOMEWORLD_TARGET; else _cc_base=$(hw_current); fi
             printf '%s\n' "$(hw_safe_path "$_cc_base/config" "$1")"
             ;;
@@ -934,7 +991,8 @@ main() {
         doctor) cmd_doctor ;;
         --version|-V) printf 'homeworld %s\n' "$HW_VERSION" ;;
         --help|-h) usage ;;
-        *) hw_die "unknown command: $cmd. Run 'homeworld --help'" ;;
+        *) hw_die "unknown command: $cmd" \
+                 "Run 'homeworld --help' for usage." ;;
     esac
 }
 main "$@"

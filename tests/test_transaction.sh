@@ -5,11 +5,11 @@ setup_env
 mkdir -p "$HW_DATA/generations" "$HW_STATE/locks"
 module_root="$_T_TMP/module"; mkdir -p "$module_root/config"; printf one > "$module_root/config/file"
 HOMEWORLD_MODULE_ROOT="$module_root"; export HOMEWORLD_MODULE_ROOT
-one=$(hw_gen_new); hw_config_link config/file "$_T_TMP/external" mod "$one"; hw_gen_write_meta "$one" linux test '' mod
+one=$(hw_gen_new); hw_config_add config/file file "$one" mod; hw_config_link file "$_T_TMP/external" mod "$one"; hw_gen_write_meta "$one" linux test '' mod
 hw_gen_activate "$one"
 assert_link "$_T_TMP/external" "$(hw_current)/config/mod/file" "binding points through current"
 printf two > "$module_root/config/file"
-two=$(hw_gen_new); hw_config_link config/file "$_T_TMP/external" mod "$two"; hw_gen_write_meta "$two" linux test '' mod
+two=$(hw_gen_new); hw_config_add config/file file "$two" mod; hw_config_link file "$_T_TMP/external" mod "$two"; hw_gen_write_meta "$two" linux test '' mod
 hw_gen_activate "$two"
 assert_eq "$(cat "$_T_TMP/external")" two "new generation visible"
 hw_gen_rollback
@@ -20,9 +20,9 @@ section "interrupted activation is repaired automatically"
 setup_env
 module_root="$_T_TMP/module"; mkdir -p "$module_root/config"; printf one > "$module_root/config/file"
 HOMEWORLD_MODULE_ROOT="$module_root"; export HOMEWORLD_MODULE_ROOT
-one=$(hw_gen_new); hw_config_link config/file "$_T_TMP/external" mod "$one"; hw_gen_write_meta "$one" linux test '' mod; hw_gen_activate "$one"
+one=$(hw_gen_new); hw_config_add config/file file "$one" mod; hw_config_link file "$_T_TMP/external" mod "$one"; hw_gen_write_meta "$one" linux test '' mod; hw_gen_activate "$one"
 printf two > "$module_root/config/file"
-two=$(hw_gen_new); hw_config_link config/file "$_T_TMP/external" mod "$two"; hw_gen_write_meta "$two" linux test '' mod
+two=$(hw_gen_new); hw_config_add config/file file "$two" mod; hw_config_link file "$_T_TMP/external" mod "$two"; hw_gen_write_meta "$two" linux test '' mod
 (
     HW_TEST_INTERRUPT_AT=after-current
     export HW_TEST_INTERRUPT_AT

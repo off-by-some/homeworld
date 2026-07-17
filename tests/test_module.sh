@@ -229,3 +229,20 @@ hw_module_applicable "$_mdir" "mja" "linux" "ubuntu" 2>/dev/null
 assert_nonzero $? "distro module skipped on ubuntu"
 
 teardown_env
+
+section "hw_module_display_name — path nesting"
+
+setup_env
+_src="$_T_TMP/src"; _mdir="$_T_TMP/mdir"; mkdir -p "$_mdir"
+make_module "$_src" "root"
+make_module "$_src/tools/docker" "docker"
+make_module "$_src/tools/docker/linux" "docker-linux"
+make_module "$_src/tools/docker/linux/gpu" "docker-gpu"
+make_module "$_src/tools/node" "node"
+_names=$(hw_module_discover "$_src" "$_mdir")
+assert_eq "$(hw_module_tree_depth "$_mdir" root "$_names")" "0" "root module has depth zero"
+assert_eq "$(hw_module_display_name "$_mdir" docker "$_names")" "docker" "top-level child is not indented by root"
+assert_eq "$(hw_module_display_name "$_mdir" docker-linux "$_names")" "  docker-linux" "nested module is indented"
+assert_eq "$(hw_module_display_name "$_mdir" docker-gpu "$_names")" "    docker-gpu" "doubly nested module is indented twice"
+assert_eq "$(hw_module_display_name "$_mdir" node "$_names")" "node" "sibling module remains top-level"
+teardown_env

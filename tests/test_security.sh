@@ -47,6 +47,6 @@ section "symlinked destination parents are handled without following the destina
 setup_env
 real_parent="$_T_TMP/real-parent"; mkdir -p "$real_parent"; ln -s "$real_parent" "$_T_TMP/link-parent"
 module="$_T_TMP/module"; mkdir -p "$module/config"; printf value > "$module/config/file"; HOMEWORLD_MODULE_ROOT="$module"; export HOMEWORLD_MODULE_ROOT
-gen=$(hw_gen_new); hw_config_link config/file "$_T_TMP/link-parent/file" mod "$gen"; hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
+gen=$(hw_gen_new); hw_config_add config/file file "$gen" mod; hw_config_link file "$_T_TMP/link-parent/file" mod "$gen"; hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
 assert_eq "$(cat "$real_parent/file")" value "symlinked parent directory supported"
 teardown_env

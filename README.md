@@ -43,7 +43,8 @@ HOMEWORLD_MODULE_NAME="zsh"
 
 ```sh
 # zsh/install.sh
-homeworld config link config/.zshrc "$HOME/.zshrc"
+homeworld config add config/.zshrc zshrc
+homeworld config link zshrc "$HOME/.zshrc"
 ```
 
 Point Homeworld at the repository and install:
@@ -83,9 +84,9 @@ Homeworld is built for the gap between "a dotfiles repo" and "adopting Nix." It 
 
 The common thread: your environment is an accumulation of small decisions, and you want it to be a *document* instead — one you can version, share between machines, and safely regenerate. If you have fifteen dotfiles and one laptop, Homeworld is more machinery than you need; see the [comparison table](#where-another-tool-fits-better) below for lighter options.
 
-## The Five Resources
+## The Resources
 
-Everything a module can declare is one of five resource kinds. This table is the whole list — the rest of this README walks through it one row at a time:
+Everything a module can declare fits into a small set of resource kinds. This table is the whole list, and the rest of this README walks through the common ones:
 
 | Resource | Declared with | What it is | Example |
 |----------|--------------|------------|---------|
@@ -93,24 +94,39 @@ Everything a module can declare is one of five resource kinds. This table is the
 | **Commands** | `homeworld command` | Your scripts, exposed on `PATH` | that deploy script you always lose |
 | **Packages** | `packages/*.txt` | System packages, installed by your OS's manager | `ripgrep`, `tmux` |
 | **Repos** | `homeworld repo` | Git dependencies, pinned to exact commits | pyenv, zsh plugins, themes |
+| **Assets** | `homeworld asset` | Immutable generated, downloaded, patched, or bundled files | patched requirements, themes, tool bundles |
 | **State** | `homeworld state` | Mutable machine-local data Homeworld points at but never touches | pyenv's built Pythons, caches |
 
-Two verbs recur across all of them, and they always mean the same thing:
+Two verbs recur across the primitive resources, and they always mean the same thing:
 
 * **`add`** — build the resource into the environment
-* **`link`** — `add`, plus maintain a symlink somewhere in your home directory pointing at it
+* **`link`** — expose that resource at a Homeworld-owned destination
 
-Declarations live in a module's `install.sh`, which is plain shell — no template language, no DSL. Conventional directories like `config/` and `commands/` are shorthand that feeds these same five resources; the primitives are the real API, and the layout is just a tidy place to keep their inputs.
+Declarations live in a module's `install.sh`, which is plain shell — no template language, no DSL. Conventional directories like `config/` and `commands/` are shorthand that feeds these same primitives; the primitives are the real API, and the layout is just a tidy place to keep their inputs.
+
+When Homeworld plans an install, it prints a grepable table. Nested modules are indented in the module column, but the status token stays fixed:
+
+```text
+Module plan:
+  STATUS   MODULE                DETAILS
+  -------  ------                -------
+  INSTALL  docker                Docker utilities
+  INSTALL    docker-linux        Docker on Linux
+  SKIP       docker-macos        unsupported on linux
+```
+
+Errors use the same idea: `homeworld: ERROR` for the problem and `homeworld: HINT` for the next step.
 
 ## Config — files you maintain
 
 The Quick Start already showed the essential move:
 
 ```sh
-homeworld config link config/.zshrc "$HOME/.zshrc"
+homeworld config add config/.zshrc zshrc
+homeworld config link zshrc "$HOME/.zshrc"
 ```
 
-This copies your file into the environment being built and keeps `~/.zshrc` pointing at it. Two properties are worth knowing:
+`config add` copies your file into the environment being built, and `config link` keeps `~/.zshrc` pointing at the named snapshot. Two properties are worth knowing:
 
 * **The link survives updates without being rewritten.** `~/.zshrc` points through a stable `current/` symlink, so when a new environment activates, every config link follows automatically.
 * **Homeworld won't clobber your files.** If `~/.zshrc` already exists as a real file — or as a symlink Homeworld didn't create — installation stops and tells you, rather than overwriting it.
@@ -182,6 +198,30 @@ homeworld repo link pyenv "$HOME/.pyenv"
 
 Remove the declaration and the checkout is garbage-collected once nothing references it. There's no separate uninstall ritual — you stop declaring it, and it goes away.
 
+## Assets — immutable generated or patched files
+
+Assets are files or directories that Homeworld owns as part of a generation, but that are not configuration you edit directly. Use them for generated files, downloaded bundles, compiled tools, extracted archives, or small patches to a repository view.
+
+```sh
+# in install.sh
+homeworld asset add generated/theme theme
+homeworld asset link theme "$HOME/.local/share/theme"
+```
+
+`asset add` snapshots the source. After that, changing or deleting the original file does not change the generation. Rollback restores the older asset; garbage collection removes assets that no retained generation references.
+
+Assets can also appear inside a managed repository without modifying the checkout:
+
+```sh
+homeworld repo add https://github.com/kohya-ss/sd-scripts.git sd-scripts
+repo=$(homeworld repo path sd-scripts)
+
+homeworld asset add generated/requirements.txt requirements
+homeworld asset link requirements "$repo/requirements.txt"
+```
+
+Homeworld presents a composed repository view: the original checkout plus the immutable asset replacement. That is the right shape for generated files or tiny patches. Mutable data still belongs in state.
+
 ## State — the data that's yours, not Homeworld's
 
 Here's where the pyenv module gets interesting. Homeworld rebuilds its environments freely — that's what makes updates and rollback safe. But `~/.pyenv/versions` holds the Python interpreters pyenv *built*: gigabytes, twenty minutes each. That data must never be rebuilt, rolled back, or cleaned up. It isn't Homeworld's.
@@ -212,7 +252,7 @@ homeworld repo link pyenv "$HOME/.pyenv"
 homeworld state bind pyenv-versions "$HOME/.pyenv/versions"
 ```
 
-This split — immutable resources Homeworld can rebuild at will, mutable state it only points at — runs through the whole system. It's also what makes the next section's guarantees safe to give: Homeworld can swap and discard environments freely because your data was never inside them.
+This split runs through the whole system: repos and assets are immutable resources Homeworld can rebuild, while state is mutable data it only points at. It's also what makes the next section's guarantees safe to give: Homeworld can swap and discard environments freely because your data was never inside them.
 
 ## The Generation Guarantee
 

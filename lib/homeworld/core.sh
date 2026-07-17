@@ -38,8 +38,9 @@ esac
 
 # Semantic color variables — all empty when color is off, so every printf
 # that interpolates them produces identical output in both modes. Color only
-# appears on status tokens (OK, WARN, INSTALL, SKIP) and the error/warn labels
-# in hw_die and hw_warn; it never decorates plain text or data values.
+# appears on status tokens (OK, WARN, ERROR, INSTALL, SKIP) and the
+# error/warn/hint labels in hw_die and hw_warn; it never decorates plain text
+# or data values.
 #
 # We try tput first because it reads the terminal's terminfo database. If tput
 # is missing or the terminal doesn't support enough colors, we fall back to
@@ -88,17 +89,16 @@ hw_log() {
 # hw_warn — non-fatal warning to stderr. The WARN token is colored yellow.
 # Use when something is wrong but the operation can continue.
 hw_warn() {
-    printf 'homeworld: %sWARN%s  %s\n' "$_HW_C_WARN" "$_HW_C_RST" "$1" >&2
+    printf 'homeworld: %sWARN%s   %s\n' "$_HW_C_WARN" "$_HW_C_RST" "$1" >&2
 }
 
-# hw_die — unrecoverable error. Prints a colored "error:" label and exits.
-# The optional second argument is a one-line hint shown below the error so
+# hw_die — unrecoverable error. Prints a grepable ERROR label and exits.
+# The optional second argument is a one-line HINT shown below the error so
 # the user knows their next move before going to look anything up.
 hw_die() {
-    printf 'homeworld: %serror:%s %s\n' "$_HW_C_ERR" "$_HW_C_RST" "$1" >&2
+    printf 'homeworld: %sERROR%s  %s\n' "$_HW_C_ERR" "$_HW_C_RST" "$1" >&2
     if [ $# -ge 2 ] && [ -n "$2" ]; then
-        printf '\n' >&2
-        printf 'hint: %s\n' "$2" >&2
+        printf 'homeworld: %sHINT%s   %s\n' "$_HW_C_BOLD" "$_HW_C_RST" "$2" >&2
     fi
     exit 1
 }

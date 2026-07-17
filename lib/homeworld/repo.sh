@@ -306,7 +306,13 @@ hw_repo_path() {
     if [ -n "${HOMEWORLD_TARGET:-}" ]; then _hrp_base=$HOMEWORLD_TARGET; else _hrp_base=$(hw_current); fi
     _hrp_path="$_hrp_base/repos/$_hrp_ns"
     [ -e "$_hrp_path" ] || [ -L "$_hrp_path" ] || return 1
-    printf '%s' "$_hrp_path"
+    hw_managed_link_prepare_views "$_hrp_base"
+    _hrp_projection="$(hw_resource_projections_dir "$_hrp_base")/repo/$_hrp_ns"
+    if [ -f "$_hrp_projection" ]; then
+        printf '%s/.homeworld/projections/%s' "$_hrp_base" "$(cat "$_hrp_projection")"
+    else
+        printf '%s' "$_hrp_path"
+    fi
 }
 
 hw_repo_update_current() {

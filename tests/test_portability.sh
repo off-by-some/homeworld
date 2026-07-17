@@ -15,7 +15,7 @@ HOMEWORLD_MODULE_ROOT="$module"; export HOMEWORLD_MODULE_ROOT
 # backslash-octal escapes that do not use the POSIX \0ddd form.
 unicode_suffix='ü'
 gen=$(hw_gen_new); dest="$_T_TMP/path with spaces [*] $unicode_suffix"
-hw_config_link config/file "$dest" mod "$gen"; hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
+hw_config_add config/file file "$gen" mod; hw_config_link file "$dest" mod "$gen"; hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
 assert_link "$dest" "$(hw_current)/config/mod/file" "hostile destination link is created exactly"
 assert_eq "$(cat "$dest")" value "spaces, glob characters, and Unicode work"
 (hw_managed_link_record "$_T_TMP/bad

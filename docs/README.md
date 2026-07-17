@@ -5,6 +5,7 @@ This is the complete command surface, storage model, and set of guarantees. It a
 ## Contents
 
 - [CLI reference](#cli-reference)
+- [Command-line output](#command-line-output)
 - [Modules](#modules) — discovery, the manifest, and the hook environment
 - [The resource model](#the-resource-model) — the verbs, and what they always mean
 - [Writing good modules](#writing-good-modules) — practices that keep the guarantees intact
@@ -36,12 +37,12 @@ homeworld repo path <namespace>
 homeworld repo update <namespace|--all>
 
 homeworld asset add <source> <name>
-homeworld asset link <source> <name> <destination>
+homeworld asset link <name> <destination>
 homeworld asset path <module/name>
 
-homeworld config add <source>
-homeworld config link <source> <destination>
-homeworld config path <module/resource>
+homeworld config add <source> <name>
+homeworld config link <name> <destination>
+homeworld config path <module/name>
 
 homeworld command add <source> <name>
 homeworld command path <name|self>
@@ -57,10 +58,37 @@ homeworld generation gc
 homeworld module path
 ```
 
-Resource-creation commands require module installation context — they're called from an install hook. `state bind`, `repo update`, path queries, and generation operations are ordinary runtime commands you can run at any time.
+Resource-creation commands require module installation context. They are called from an install hook. `state bind`, `repo update`, path queries, and generation operations are ordinary runtime commands you can run at any time.
 
 The old top-level `rollback`, `generations`, `gc`, and `path` forms fail with migration guidance.
 
+---
+
+## Command-line output
+
+Human-facing output uses stable uppercase labels so it is easy to scan and easy to grep. Status words stay in the first column of tables, and color, when enabled, decorates only the status word.
+
+The install plan is a table. Nested modules are indented in the `MODULE` column, while `INSTALL` and `SKIP` remain fixed in the `STATUS` column:
+
+```text
+Module plan:
+  STATUS   MODULE                DETAILS
+  -------  ------                -------
+  INSTALL  ai-tools              AI and machine learning tools
+  INSTALL  docker                Docker utilities and GPU acceleration detection
+  INSTALL    docker-linux        Docker on Linux with NVIDIA GPU support
+  SKIP       docker-macos        unsupported on linux
+  INSTALL  node                  Node.js runtime via nvm
+```
+
+Errors and hints use the same shape:
+
+```text
+homeworld: ERROR  unknown command: wat
+homeworld: HINT   Run 'homeworld --help' for usage.
+```
+
+Warnings use `homeworld: WARN`. Test output and doctor checks use the same short status-token style.
 
 ---
 
@@ -148,12 +176,12 @@ The `ROOT`/`TARGET` split matters: `ROOT` is the environment you're using right 
 
 ## The resource model
 
-Five resource types, five verbs — and the verbs mean the same thing everywhere:
+Resource types and verbs. The verbs mean the same thing everywhere when a resource supports them:
 
 | Verb | Meaning |
 |---|---|
 | `add` | Put the resource into the generation being built |
-| `link` | `add`, plus maintain an external symlink pointing to it |
+| `link` | Expose an already-named resource or state binding at a managed destination |
 | `path` | Ask where a resource lives, generation-aware |
 | `update` | Fetch new source data without touching the active environment |
 | `bind` | Map a portable state name to machine-local storage |
@@ -162,8 +190,10 @@ The compact form:
 
 ```text
 add  = manage it inside the generation
-link = add + an external destination Homeworld owns
+link = expose it at a Homeworld-owned destination
 ```
+
+For config, assets, repos, and state, `link` exposes an existing named resource or binding. It does not secretly stage a source file.
 
 One asymmetry is worth memorizing: **config, asset, and repo links point through `current/`; state links point straight at the real data.** That's the immutable/mutable line, drawn in symlinks. Activation swaps what `current/` resolves to, so every immutable link follows along for free. State doesn't follow — because state isn't Homeworld's to move.
 
@@ -177,11 +207,11 @@ Homeworld's guarantees cover what its primitives do. A hook is plain shell, so i
 
 **No live mutation in module hooks.** A hook should only calculate values, generate files under a temporary build location, and invoke resource declarations. It should not edit files in `$HOME`, restart services, or otherwise modify the environment you're currently using — that's what `link` and activation are for, and they do it transactionally. Any unavoidable side effect (running `pyenv install`, initializing a database) should be isolated in its own clearly named function, documented, and idempotent — so the deliberate exceptions are easy to find and safe to re-run.
 
-**Write to `HOMEWORLD_TARGET`, never `HOMEWORLD_ROOT`.** `ROOT` is the environment you're using right now; a hook that writes into it has mutated live state behind the transaction's back. Generated files belong in the build — write them under `TARGET` (or a temp dir) and declare them with `asset add`.
+**Write to `HOMEWORLD_TARGET`, never `HOMEWORLD_ROOT`.** `ROOT` is the environment you're using right now; a hook that writes into it has mutated live state behind the transaction's back. Generated files belong in the build. Write them under `TARGET` or a temp dir, declare them with `asset add`, and link the resulting asset where it belongs.
 
 **Make hooks idempotent.** Hooks run on *every* build — install, reinstall, update. Anything expensive or side-effectful must be safe to run twice: check whether the Python version already exists before building it, whether the database is already initialized before seeding it. The primitives are already idempotent; your additions need to match.
 
-**Assume the generation is disposable.** A generation should be rebuildable from the setup repository alone, on any machine. Generate assets in the hook rather than committing build artifacts; pin tools as repos rather than `curl | sh` from a moving URL; build from pinned sources when a version matters. If deleting every generation and reinstalling wouldn't reproduce your environment, something is hiding outside the declarations.
+**Assume the generation is disposable.** A generation should be rebuildable from the setup repository alone, on any machine. Generate assets in the hook rather than committing build artifacts; pin tools as repos rather than `curl | sh` from a moving URL; build from pinned sources when a version matters. If a repository needs a generated or patched file, declare that file as an asset and link it inside the repo view instead of editing the checkout. If deleting every generation and reinstalling wouldn't reproduce your environment, something is hiding outside the declarations.
 
 **Pin downloaded artifacts explicitly.** Git sources get exact commits for free; anything a hook downloads by other means (release tarballs, prebuilt binaries) needs the same discipline by hand. Pin the release version — never "latest" — verify a checksum, and keep the architecture and platform selection visible in the hook rather than deferring to whatever a download page decides. Download to a temporary path and move into place only after verification, so a network failure leaves no partial artifact behind.
 
@@ -200,25 +230,26 @@ Homeworld's guarantees cover what its primitives do. A hook is plain shell, so i
 Files you maintain and want identical everywhere.
 
 ```sh
-homeworld config add config/zshrc
-homeworld config link config/zshrc "$HOME/.zshrc"
+homeworld config add config/zshrc zshrc
+homeworld config link zshrc "$HOME/.zshrc"
 homeworld config path zsh/zshrc
 ```
 
 Sources are relative to `HOMEWORLD_MODULE_ROOT`. Absolute paths, `..` traversal, and symlink sources are rejected.
 
-**Naming.** A leading `config/` is stripped from the resource identity — it's convention, not information:
+**Naming.** The second argument to `config add` is the stable Homeworld name for this config inside the module. It uses the same name rules as assets: lowercase letters, numbers, dots, underscores, and hyphens. The source path is just where the bytes come from; the name is how other commands refer to the snapshot.
 
 ```text
-module/config/zshrc          →  generation/config/zsh/zshrc
-module/generated/app.conf    →  generation/config/zsh/generated/app.conf
-```
+homeworld config add config/zshrc zshrc
+    → generation/config/zsh/zshrc
 
-Anything outside `config/` keeps its module-relative path.
+homeworld config add generated/app.conf app-conf
+    → generation/config/zsh/app-conf
+```
 
 **Staging.** Files are copied to a temporary sibling path, then renamed into place once complete. A generation never contains a half-written config.
 
-**The link.** An external config link resolves through `current/`:
+**The link.** `config link <name> <destination>` exposes an already-added config. An external config link resolves through `current/`:
 
 ```text
 ~/.zshrc  →  ~/.local/share/homeworld/current/config/zsh/zshrc
@@ -226,23 +257,59 @@ Anything outside `config/` keeps its module-relative path.
 
 Homeworld will not overwrite an unmanaged file, directory, or foreign symlink at the destination. It stops and tells you.
 
+If a config link targets a path inside a managed repository view, Homeworld composes it into that generation-local view, just like an asset overlay. The checkout is not modified.
+
 ---
 
 ## Assets
 
-Static files that aren't configuration — themes, templates, generated data.
+Immutable files or directories owned by a generation: themes, templates, generated data, downloaded tools, patched files, and other build results that Homeworld may safely recreate.
 
 ```sh
 homeworld asset add generated/theme theme
-homeworld asset link generated/theme theme "$HOME/.local/share/theme"
+homeworld asset link theme "$HOME/.local/share/theme"
 homeworld asset path zsh/theme
 ```
+An asset source can be a file or a directory, sourced from an absolute generated path or a module-relative one. Symlink sources are rejected. `asset add` snapshots the source into the pending generation. After that, changing or deleting the source path does not change the asset.
 
-An asset can be a file or a directory, sourced from an absolute generated path or a module-relative one. Symlink sources are rejected.
+Assets are **recreated on every build**, never copied forward from the previous generation. If your hook generates a theme, it generates it fresh each time, so an asset in a generation always reflects the code that built it, not a fossil from three installs ago. Rollback restores whatever the selected generation had. GC removes an asset along with its generation.
 
-Assets are **recreated on every build**, never copied forward from the previous generation. If your hook generates a theme, it generates it fresh each time — so an asset in a generation always reflects the code that built it, not a fossil from three installs ago.
+### Asset links
 
-Rollback restores whatever the selected generation had. GC removes an asset along with its generation.
+`asset link <name> <destination>` exposes an already-added asset. If the destination is outside Homeworld-managed content, Homeworld creates a symlink that points through `current/`, just like config and repo links:
+
+```text
+~/.local/share/theme  ->  ~/.local/share/homeworld/current/assets/zsh/theme
+```
+
+If the destination is inside a managed directory resource, such as the path returned by `homeworld repo path`, Homeworld does not modify that directory. It builds a generation-local composed view instead.
+
+```sh
+homeworld repo add https://github.com/kohya-ss/sd-scripts.git sd-scripts
+repo=$(homeworld repo path sd-scripts)
+
+# requirements.txt was generated earlier by this hook.
+homeworld asset add requirements.txt requirements
+homeworld asset link requirements "$repo/requirements.txt"
+```
+
+The checked-out repository stays immutable. The active repository path becomes a view made from the checkout plus the asset replacement:
+
+```text
+sd-scripts checkout
++ requirements asset
+= generation-local sd-scripts view
+```
+
+After activation, `homeworld repo path sd-scripts` returns that composed view. Rollback returns the view for the selected generation, including the matching asset contents.
+
+### Asset overlay rules
+
+Asset overlays are immutable and generation-owned, so they may intentionally replace existing repository files or directories. This is the supported way to model small patches or generated files inside a repository without editing the checkout.
+
+Conflicts fail before activation. Homeworld rejects unsafe nested paths, duplicate incompatible destinations, ancestor/descendant overlay ambiguity, and attempts to cross a file as though it were a directory. Exact duplicate declarations that resolve to the same target are deduplicated.
+
+Use state, not assets, for data that a tool should keep mutating after activation.
 
 ---
 
@@ -313,6 +380,20 @@ Everything downstream reads these manifests directly: `repo update --all` uses t
 
 A namespace can use a new URL or ref in a later generation. Homeworld notices the changed declaration, realizes it independently, and leaves the active generation alone until activation succeeds. Older generations keep their original source and commit. Two conflicting declarations for one namespace inside a single build is an error.
 
+### Composed repository views
+
+A repository checkout is immutable. When a config, asset, or state declaration targets a path beneath `homeworld repo path <namespace>`, Homeworld builds a generation-local view instead of changing the checkout. Unchanged entries are symlinks into the checkout. Config and asset entries point at immutable generation snapshots. State entries point through the state resolver.
+
+The same public command resolves the right location:
+
+```sh
+repo=$(homeworld repo path sd-scripts)
+```
+
+If no nested resources exist, this is the checkout itself. If nested config, asset, or state entries exist, this is the composed view for the active or pending generation. Callers do not need a separate command.
+
+Immutable config and asset overlays deliberately have different conflict rules from state. Configs and assets may replace repository content because they are immutable and generation-owned. State may only occupy absent paths because it remains mutable across rollbacks.
+
 ### Ref resolution
 
 An explicit `--ref` must resolve to a commit. Homeworld peels to a commit rather than accepting whatever Git object it lands on.
@@ -382,9 +463,11 @@ Targets must already exist. Homeworld records whether each is a file or a direct
 
 State can sit beneath a managed tree — the canonical case is `~/.pyenv/versions` living inside the pyenv repo link. Homeworld supports this without compromising either side of the immutable/mutable line.
 
-The read-only checkout is never modified. Instead, each generation gets its own composed view of the managed directory: unchanged entries are symlinks into the checkout, and the state entry points through the resolver. Nothing named `versions` is inserted into the checkout itself — it exists only in that generation-local view. The view is built and fully validated before the activation journal opens and before `current` moves, so nested state obeys the same rule as everything else: no live change until the whole build has succeeded.
+The read-only checkout is never modified. Instead, each generation gets its own composed view of the managed directory: unchanged entries are symlinks into the checkout, and the state entry points through the resolver. Nothing named `versions` is inserted into the checkout itself. It exists only in that generation-local view. The view is built and fully validated before the activation journal opens and before `current` moves, so nested state obeys the same rule as everything else: no live change until the whole build has succeeded.
 
-Conflicts fail loudly rather than quietly. If upstream later adds a real `versions` path to the repository, activation fails before `current` changes — Homeworld does not silently hide or replace upstream content with your state. When a destination could nest under more than one managed directory, Homeworld chooses the nearest declared managed ancestor; conflicting targets, unsafe path components, duplicate incompatible declarations, and attempts to store state *beneath a managed root* are all rejected. Multiple modules may declare the same nested destination as long as they resolve to the same target — the declarations are simply deduplicated.
+Conflicts fail loudly rather than quietly. If upstream later adds a real `versions` path to the repository, activation fails before `current` changes. Homeworld does not silently hide or replace upstream content with your state. When a destination could nest under more than one managed directory, Homeworld chooses the nearest declared managed ancestor; conflicting targets, unsafe path components, duplicate incompatible declarations, and attempts to store state *beneath a managed root* are all rejected. Multiple modules may declare the same nested destination as long as they resolve to the same target, and the declarations are deduplicated.
+
+Nested state shares the same composed-view machinery as nested config and asset overlays, but the policy is different: immutable overlays may replace repository content, state may not.
 
 (All of this said: physically separate state directories remain the tidier habit — see [Writing good modules](#writing-good-modules).)
 
@@ -532,6 +615,9 @@ Homeworld claims no adversarial protection against another same-user process cha
 │       ├── repos/
 │       └── .homeworld/
 │           ├── managed-links/
+│           ├── projections/
+│           ├── projection-roots/
+│           ├── resource-projections/
 │           ├── repo-manifest/
 │           ├── installed-modules
 │           ├── source-revision

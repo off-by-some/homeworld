@@ -86,7 +86,7 @@ hw_module_load() {
 
     if [ -z "$_hml_name" ]; then
         hw_die "HOMEWORLD_MODULE_NAME is not set in $_hml_manifest" \
-               "Add a line like: HOMEWORLD_MODULE_NAME=\"your-module-name\""
+               "Add a line like: HOMEWORLD_MODULE_NAME="your-module-name""
     fi
 
     # Validate: must match [a-z0-9][a-z0-9._-]*. Strip valid chars and check
@@ -133,6 +133,9 @@ hw_module_load() {
 hw_module_discover() {
     _hmd_source="$1"
     _hmd_moddir="$2"
+
+    mkdir -p "$_hmd_moddir"
+    printf '%s' "$_hmd_source" > "$_hmd_moddir/.source-root"
 
     # The root sentinel is mandatory — without it we'd silently provision
     # an unrelated directory.
@@ -182,6 +185,68 @@ hw_module_get() {
         cat "$_hmg_file"
     fi
     # Empty output for missing files is intentional and documented
+}
+
+# hw_module_tree_depth moddir name names
+# Return how deeply a module is nested under other modules by filesystem path.
+# The source-root module is ignored as an ancestor so ordinary child modules do
+# not all appear one level deep merely because the repository root is a module.
+hw_module_tree_depth() {
+    _hmtd_moddir="$1"
+    _hmtd_name="$2"
+    _hmtd_names="$3"
+
+    _hmtd_path=$(hw_module_get "$_hmtd_moddir" "$_hmtd_name" "path")
+    _hmtd_root=""
+    [ -f "$_hmtd_moddir/.source-root" ] && _hmtd_root=$(cat "$_hmtd_moddir/.source-root")
+
+    _hmtd_depth=0
+    for _hmtd_other in $_hmtd_names; do
+        [ "$_hmtd_other" = "$_hmtd_name" ] && continue
+        _hmtd_parent=$(hw_module_get "$_hmtd_moddir" "$_hmtd_other" "path")
+        [ -n "$_hmtd_parent" ] || continue
+        [ "$_hmtd_parent" = "$_hmtd_root" ] && continue
+        case "$_hmtd_path" in
+            "$_hmtd_parent"/*) _hmtd_depth=$(expr "$_hmtd_depth" + 1) ;;
+        esac
+    done
+
+    printf '%s' "$_hmtd_depth"
+}
+
+# hw_module_display_name moddir name names
+# Print the name with two spaces of indentation for every module ancestor.
+hw_module_display_name() {
+    _hmdn_moddir="$1"
+    _hmdn_name="$2"
+    _hmdn_names="$3"
+
+    _hmdn_depth=$(hw_module_tree_depth "$_hmdn_moddir" "$_hmdn_name" "$_hmdn_names")
+    _hmdn_indent=""
+    while [ "$_hmdn_depth" -gt 0 ]; do
+        _hmdn_indent="$_hmdn_indent  "
+        _hmdn_depth=$(expr "$_hmdn_depth" - 1)
+    done
+
+    printf '%s%s' "$_hmdn_indent" "$_hmdn_name"
+}
+
+# hw_module_display_width moddir names minimum
+# Return a stable module column width that accounts for nested indentation.
+hw_module_display_width() {
+    _hmdw_moddir="$1"
+    _hmdw_names="$2"
+    _hmdw_width="$3"
+
+    for _hmdw_name in $_hmdw_names; do
+        _hmdw_display=$(hw_module_display_name "$_hmdw_moddir" "$_hmdw_name" "$_hmdw_names")
+        _hmdw_len=$(expr length "$_hmdw_display")
+        if [ "$_hmdw_len" -gt "$_hmdw_width" ]; then
+            _hmdw_width="$_hmdw_len"
+        fi
+    done
+
+    printf '%s' "$_hmdw_width"
 }
 
 # hw_module_applicable moddir name platform distro
