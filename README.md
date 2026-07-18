@@ -206,33 +206,34 @@ Homeworld presents a composed repository view: the original checkout plus the im
 
 ## State — the data that's yours, not Homeworld's
 
-Here's where the pyenv module gets interesting. Homeworld rebuilds its environments freely — that's what makes updates and rollback safe. But `~/.pyenv/versions` holds the Python interpreters pyenv *built*: gigabytes, twenty minutes each. That data must never be rebuilt, rolled back, or cleaned up. It isn't Homeworld's.
+Homeworld rebuilds its environments freely — that's what makes updates and rollback safe — but pyenv itself expects parts of `~/.pyenv` to be writable. The checkout is code. Installed Python versions, regenerated shims, download caches, and the global `version` file are local data.
 
-**State** is how a module says so:
+**State** is how a module draws that line. The pyenv code is pinned as a repo; the writable paths live somewhere stable outside the generation and are linked back into the pyenv root:
 
 ```sh
 # in install.sh
-homeworld state bind pyenv-versions "$HOME/.pyenv/versions"
-```
-
-Homeworld now knows this path by name — and knows to keep its hands off. It never copies, deletes, rolls back, or garbage-collects a state target. It manages the pointer; you own the data.
-
-The name is what makes state portable. Your setup repository says `pyenv-versions`; each machine binds that name wherever its data actually lives — `/mnt/big-disk/pyenv` on the desktop, `~/.pyenv/versions` on the laptop. The same repository provisions both without a single `if` statement.
-
-So the complete pyenv module — pinned tool, linked into place, with its mutable data protected — is two files:
-
-```text
-pyenv/
-├── .homeworld-module
-└── install.sh
-```
-
-```sh
-# install.sh
 homeworld repo add https://github.com/pyenv/pyenv pyenv
 homeworld repo link pyenv "$HOME/.pyenv"
-homeworld state bind pyenv-versions "$HOME/.pyenv/versions"
+
+state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
+pyenv_state_root=${PYENV_STATE_ROOT:-"$state_home/pyenv"}
+
+mkdir -p \
+    "$pyenv_state_root/versions" \
+    "$pyenv_state_root/shims" \
+    "$pyenv_state_root/cache"
+
+[ -e "$pyenv_state_root/version" ] || : > "$pyenv_state_root/version"
+
+homeworld state link "$pyenv_state_root/versions" "$HOME/.pyenv/versions"
+homeworld state link "$pyenv_state_root/shims" "$HOME/.pyenv/shims"
+homeworld state link "$pyenv_state_root/cache" "$HOME/.pyenv/cache"
+homeworld state link "$pyenv_state_root/version" "$HOME/.pyenv/version"
 ```
+
+Homeworld owns the links, not the data. It never copies, deletes, rolls back, or garbage-collects a state target. If one machine needs its pyenv state on a larger disk, bind that path to a portable name with `homeworld state bind` and link the name instead.
+
+Plugins need the same decision. If every machine should have the same plugin code, pin each plugin as a repo and link it under `$HOME/.pyenv/plugins/<name>`. If a plugin manager owns that directory, make it state instead; it will work, but plugin contents become machine-local rather than something Homeworld keeps identical.
 
 That split shows up everywhere in Homeworld: repos and assets are things it can rebuild, while state is data it only points at. Homeworld can throw away old environments because your data was never inside them.
 

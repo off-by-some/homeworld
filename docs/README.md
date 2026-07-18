@@ -215,7 +215,9 @@ Homeworld can only protect the work it knows about. A hook is plain shell, so it
 
 **Pin downloaded artifacts explicitly.** Git sources get exact commits for free; anything a hook downloads by other means (release tarballs, prebuilt binaries) needs the same discipline by hand. Pin the release version — never "latest" — verify a checksum, and keep the architecture and platform selection visible in the hook rather than deferring to whatever a download page decides. Download to a temporary path and move into place only after verification, so a network failure leaves no partial artifact behind.
 
-**Put anything a tool writes behind `state`.** Interpreter versions, caches, databases, history files — if it's written at runtime and would hurt to lose, bind it as state. Never let a tool write into a generation path: generations are rebuilt and garbage-collected, and data stored inside one will be rebuilt and garbage-collected with it. The pyenv pattern is the template — the tool is a pinned repo, its `versions/` directory is state.
+**Put anything a tool writes behind `state`.** Interpreter versions, shims, caches, databases, history files — if it's written at runtime and would hurt to lose, bind or link it as state. Generations are disposable; data inside them is disposable too.
+
+**Check what a tool writes before linking its root.** Tools like pyenv and nvm look like a single Git checkout, but the directory is usually a mix of code and local data. Pin the code as a repo, then link the writable paths back in as state. For pyenv, that usually means `versions`, `shims`, `cache`, and the global `version` file. Plugins need a choice: pin plugin code as repos if machines should match exactly, or make the plugin directory state if a plugin manager is allowed to mutate it.
 
 **Keep state physically separate.** Prefer a home of its own for mutable data — `~/.local/share/<state-name>` — over nesting it beneath a managed repository tree. Homeworld handles nested state correctly (see [State](#state)), but a separate directory keeps the immutable/mutable boundary visible on disk: nothing under a checkout is ever a surprise, and nothing precious lives where everything around it is disposable.
 
@@ -438,20 +440,55 @@ On network or auth failure, a healthy mirror is left alone. If Git reports the m
 
 ## State
 
-State is mutable, persistent, and deliberately outside generations: caches, databases, built interpreters — data that would be absurd to rebuild and catastrophic to roll back.
+State is mutable, persistent, and deliberately outside generations: caches, databases, built interpreters, generated shims — data that would be absurd to rebuild and catastrophic to roll back.
 
 ```sh
-homeworld state bind pyenv-versions "$HOME/.pyenv/versions"
-homeworld state link pyenv-versions "$HOME/.local/share/pyenv-versions"
+homeworld state bind app-data "/mnt/data/app"
+homeworld state link app-data "$HOME/.local/share/app"
 ```
 
-A module can also link a direct absolute path, skipping the name:
+Run `state bind` once per machine when the physical path is machine-specific. Keep `state link` in the module so the setup repository still declares where the state appears.
+
+A module can also link a direct absolute path, skipping the name. This is useful when every machine can follow the same convention:
 
 ```sh
-homeworld state link "/mnt/data/app" "$HOME/.local/share/app"
+state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
+mkdir -p "$state_home/app"
+homeworld state link "$state_home/app" "$HOME/.local/share/app"
 ```
 
 **Homeworld owns the destination symlink, not the target data.** It never copies, deletes, rolls back, garbage-collects, or changes permissions on a state target.
+
+### Writable tool roots
+
+Some tools keep code and local data under the same root. pyenv is the usual example. The checkout is code, but `versions`, `shims`, `cache`, and the global `version` file are written at runtime. A good module keeps the checkout pinned and read-only, then gives those writable paths a separate home:
+
+```sh
+pyenv_root=${PYENV_ROOT:-"$HOME/.pyenv"}
+state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
+pyenv_state_root=${PYENV_STATE_ROOT:-"$state_home/pyenv"}
+
+mkdir -p \
+    "$pyenv_state_root/versions" \
+    "$pyenv_state_root/shims" \
+    "$pyenv_state_root/cache"
+
+[ -e "$pyenv_state_root/version" ] || : > "$pyenv_state_root/version"
+
+homeworld repo add https://github.com/pyenv/pyenv.git pyenv
+homeworld repo link pyenv "$pyenv_root"
+
+homeworld state link "$pyenv_state_root/versions" "$pyenv_root/versions"
+homeworld state link "$pyenv_state_root/shims" "$pyenv_root/shims"
+homeworld state link "$pyenv_state_root/cache" "$pyenv_root/cache"
+homeworld state link "$pyenv_state_root/version" "$pyenv_root/version"
+```
+
+That convention puts machine-local data under `~/.local/state/pyenv` by default, while pyenv still sees the paths it expects inside `~/.pyenv`. If one machine needs a different physical location, use `state bind` for that leaf and link the name instead.
+
+The rule of thumb: if Homeworld should keep it identical across machines, declare it as config, an asset, a command, or a pinned repo. If a tool is free to rewrite it at runtime, make it state and expect it to differ by machine.
+
+For pyenv plugins, use pinned plugin repos under `$pyenv_root/plugins/<name>` when you want the same plugin set everywhere. Making all of `$pyenv_root/plugins` state is valid, but then plugin contents are machine-local data rather than setup managed by Homeworld.
 
 ### Why bindings have names
 
