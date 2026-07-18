@@ -4,7 +4,26 @@
   <img src="docs/banner.png" alt="Homeworld — a personal provisioning runtime" style="border-radius: 16px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12); max-width: 100%; height: auto;">
 </p>
 
-<p align="center"><i>A personal provisioning runtime.</i></p>
+<p align="center" style="margin-bottom: 0">
+  <a href="https://github.com/off-by-some/homeworld/actions/workflows/test.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/off-by-some/homeworld/test.yml?branch=main&label=CI&color=2E8B57" alt="CI">
+  </a>
+  <a href="https://github.com/off-by-some/homeworld/blob/main/docs/README.md">
+    <img src="https://img.shields.io/badge/docs-reference-8A2BE2" alt="Reference docs">
+  </a>
+  <a href="https://pubs.opengroup.org/onlinepubs/9799919799/utilities/sh.html">
+    <img src="https://img.shields.io/badge/shell-POSIX%20sh-1E90FF" alt="Shell: POSIX sh">
+  </a>
+  <a href="https://github.com/off-by-some/homeworld/actions/workflows/test.yml">
+    <img src="https://img.shields.io/badge/tested%20shells-sh%20%7C%20dash%20%7C%20ash-4169E1" alt="Tested shells: sh, dash, and ash">
+  </a>
+  <a href="https://github.com/off-by-some/homeworld/actions/workflows/test.yml">
+    <img src="https://img.shields.io/badge/tested%20OS-Linux%20%7C%20macOS-FF6B35" alt="Tested OS: Linux and macOS">
+  </a>
+</p>
+
+<p align="center"><i>Personal environment management with generations and rollback.</i></p>
+
 
 **Homeworld** makes setting up a machine feel like restoring it rather than rebuilding it. Your shell configuration, the scripts living in `~/bin` on exactly one computer, the packages you always install, the tools you clone from GitHub — Homeworld gathers them into one Git repository and makes every machine you own match it. Change something on your desktop, push, run `homeworld update --install` on your laptop, and get back to work.
 
