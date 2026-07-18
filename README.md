@@ -18,11 +18,11 @@
     <img src="https://img.shields.io/badge/tested%20shells-sh%20%7C%20dash%20%7C%20ash-4169E1" alt="Tested shells: sh, dash, and ash">
   </a>
   <a href="https://github.com/off-by-some/homeworld/actions/workflows/test.yml">
-    <img src="https://img.shields.io/badge/tested%20OS-Linux%20%7C%20macOS-FF6B35" alt="Tested OS: Linux and macOS">
+    <img src="https://img.shields.io/badge/tested%20OS-Linux%20%7C%20macOS-FF6B35" alt="OS: Linux and macOS">
   </a>
 </p>
 
-<p align="center"><i>Personal environment management with generations and rollback.</i></p>
+<p align="center"><i>A transactional runtime for your personal computing environment.</i></p>
 
 
 **Homeworld** makes setting up a machine feel like restoring it rather than rebuilding it. Your shell configuration, the scripts living in `~/bin` on exactly one computer, the packages you always install, the tools you clone from GitHub — Homeworld gathers them into one Git repository and makes every machine you own match it. Change something on your desktop, push, run `homeworld update --install` on your laptop, and get back to work.
