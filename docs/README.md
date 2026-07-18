@@ -74,11 +74,11 @@ The install plan is a table. Nested modules are indented in the `MODULE` column,
 Module plan:
   STATUS   MODULE                DETAILS
   -------  ------                -------
-  INSTALL  ai-tools              AI and machine learning tools
-  INSTALL  docker                Docker utilities and GPU acceleration detection
-  INSTALL    docker-linux        Docker on Linux with NVIDIA GPU support
+  INSTALL  root
+  INSTALL  docker                Docker utilities
+  INSTALL    docker-linux        Docker on Linux
   SKIP       docker-macos        unsupported on linux
-  INSTALL  node                  Node.js runtime via nvm
+  INSTALL  node                  Node runtime
 ```
 
 Errors and hints use the same shape:
@@ -205,25 +205,25 @@ One asymmetry is worth memorizing: **config, asset, and repo links point through
 
 Homeworld can only protect the work it knows about. A hook is plain shell, so it *can* do anything — and anything it does outside the resource commands is outside the transaction: no rollback, no ownership checks, no cleanup. These habits keep most module work where Homeworld can cleanly roll it back.
 
-**No live mutation in module hooks.** A hook should only calculate values, generate files under a temporary build location, and invoke resource declarations. It should not edit files in `$HOME`, restart services, or otherwise modify the environment you're currently using — that's what `link` and activation are for, and they do it transactionally. Any unavoidable side effect (running `pyenv install`, initializing a database) should be isolated in its own clearly named function, documented, and idempotent — so the deliberate exceptions are easy to find and safe to re-run.
+1. **No live mutation in module hooks.** A hook should only calculate values, generate files under a temporary build location, and invoke resource declarations. It should not edit files in `$HOME`, restart services, or otherwise modify the environment you're currently using — that's what `link` and activation are for, and they do it transactionally. Any unavoidable side effect (running `pyenv install`, initializing a database) should be isolated in its own clearly named function, documented, and idempotent — so the deliberate exceptions are easy to find and safe to re-run.
 
-**Write to `HOMEWORLD_TARGET`, never `HOMEWORLD_ROOT`.** `ROOT` is the environment you're using right now; a hook that writes into it has mutated live state behind the transaction's back. Generated files belong in the build. Write them under `TARGET` or a temp dir, declare them with `asset add`, and link the resulting asset where it belongs.
+2. **Use `HOMEWORLD_TARGET` for generated build output.** `ROOT` is the environment you're using right now; a hook that writes into it has mutated live state behind the transaction's back. Static config belongs in the module and is captured with `homeworld config add`. Generated files should be written under `HOMEWORLD_TARGET` or a temp dir, then captured with `homeworld asset add` or `homeworld command add` and exposed with the matching `link` command.
 
-**Make hooks idempotent.** Hooks run on *every* build — install, reinstall, update. Anything expensive or side-effectful must be safe to run twice: check whether the Python version already exists before building it, whether the database is already initialized before seeding it. The primitives are already idempotent; your additions need to match.
+3. **Make hooks idempotent.** Hooks run on *every* build — install, reinstall, update. Anything expensive or side-effectful must be safe to run twice: check whether the Python version already exists before building it, whether the database is already initialized before seeding it. The primitives are already idempotent; your additions need to match.
 
-**Assume the generation is disposable.** A generation should be rebuildable from the setup repository alone, on any machine. Generate assets in the hook rather than committing build artifacts; pin tools as repos rather than `curl | sh` from a moving URL; build from pinned sources when a version matters. If a repository needs a generated or patched file, declare that file as an asset and link it inside the repo view instead of editing the checkout. If deleting every generation and reinstalling wouldn't reproduce your environment, something is hiding outside the declarations.
+4. **Assume the generation is disposable.** A generation should be rebuildable from the setup repository alone, on any machine. Generate assets in the hook rather than committing build artifacts; pin tools as repos rather than `curl | sh` from a moving URL; build from pinned sources when a version matters. If a repository needs a generated or patched file, declare that file as an asset and link it inside the repo view instead of editing the checkout. If deleting every generation and reinstalling wouldn't reproduce your environment, something is hiding outside the declarations.
 
-**Pin downloaded artifacts explicitly.** Git sources get exact commits for free; anything a hook downloads by other means (release tarballs, prebuilt binaries) needs the same discipline by hand. Pin the release version — never "latest" — verify a checksum, and keep the architecture and platform selection visible in the hook rather than deferring to whatever a download page decides. Download to a temporary path and move into place only after verification, so a network failure leaves no partial artifact behind.
+5. **Pin downloaded artifacts explicitly.** Git sources get exact commits for free; anything a hook downloads by other means (release tarballs, prebuilt binaries) needs the same discipline by hand. Pin the release version — never "latest" — verify a checksum, and keep the architecture and platform selection visible in the hook rather than deferring to whatever a download page decides. Download to a temporary path and move into place only after verification, so a network failure leaves no partial artifact behind.
 
-**Put anything a tool writes behind `state`.** Interpreter versions, shims, caches, databases, history files — if it's written at runtime and would hurt to lose, bind or link it as state. Generations are disposable; data inside them is disposable too.
+6. **Put anything a tool writes behind `state`.** Interpreter versions, shims, caches, databases, history files — if it's written at runtime and would hurt to lose, bind or link it as state. Generations are disposable; data inside them is disposable too.
 
-**Check what a tool writes before linking its root.** Tools like pyenv and nvm look like a single Git checkout, but the directory is usually a mix of code and local data. Pin the code as a repo, then link the writable paths back in as state. For pyenv, that usually means `versions`, `shims`, `cache`, and the global `version` file. Plugins need a choice: pin plugin code as repos if machines should match exactly, or make the plugin directory state if a plugin manager is allowed to mutate it.
+7. **Check what a tool writes before linking its root.** Tools like pyenv and nvm look like a single Git checkout, but the directory is usually a mix of code and local data. Pin the code as a repo, then link the writable paths back in as state. For pyenv, that usually means `versions`, `shims`, `cache`, and the global `version` file. Plugins need a choice: pin plugin code as repos if machines should match exactly, or make the plugin directory state if a plugin manager is allowed to mutate it.
 
-**Keep state physically separate.** Prefer a home of its own for mutable data — `~/.local/share/<state-name>` — over nesting it beneath a managed repository tree. Homeworld handles nested state correctly (see [State](#state)), but a separate directory keeps the immutable/mutable boundary visible on disk: nothing under a checkout is ever a surprise, and nothing precious lives where everything around it is disposable.
+8. **Keep state physically separate.** Prefer a home of its own for mutable data — `~/.local/share/<state-name>` — over nesting it beneath a managed repository tree. Homeworld handles nested state correctly (see [State](#state)), but a separate directory keeps the immutable/mutable boundary visible on disk: nothing under a checkout is ever a surprise, and nothing precious lives where everything around it is disposable.
 
-**Absorb machine differences with names, not conditionals.** A state name binds to a different path on each machine; `HOMEWORLD_PLATFORM` and `HOMEWORLD_DISTRO` handle the OS-level splits; `HOMEWORLD_PLATFORMS` in the manifest excludes a module entirely. Reaching for these keeps `if` trees out of your configs and hooks — if a hook is accumulating per-machine branches, some of those branches probably want to be bindings or separate modules.
+9. **Absorb machine differences with names, not conditionals.** A state name binds to a different path on each machine; `HOMEWORLD_PLATFORM` and `HOMEWORLD_DISTRO` handle the OS-level splits; `HOMEWORLD_PLATFORMS` in the manifest excludes a module entirely. Reaching for these keeps `if` trees out of your configs and hooks — if a hook is accumulating per-machine branches, some of those branches probably want to be bindings or separate modules.
 
-**Declare dependencies; don't rely on order.** If a module needs another's commands or config, say so with `HOMEWORLD_DEPENDS`. Discovery order is not a contract.
+10. **Declare dependencies; don't rely on order.** If a module needs another's commands or config, say so with `HOMEWORLD_DEPENDS`. Discovery order is not a contract.
 
 ---
 
