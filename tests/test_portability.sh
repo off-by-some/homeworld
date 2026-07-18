@@ -11,10 +11,13 @@ section "hostile but supported paths"
 setup_env
 module="$_T_TMP/module with spaces"; mkdir -p "$module/config"; printf value > "$module/config/file"
 HOMEWORLD_MODULE_ROOT="$module"; export HOMEWORLD_MODULE_ROOT
-# Generate the UTF-8 bytes for ü as bytes, not as awk characters.
-# POSIX printf defines \ddd in the format string as a byte; LC_ALL=C
-# avoids multibyte-locale implementations re-encoding octal escapes.
-unicode_suffix=$(LC_ALL=C printf '\303\274')
+# Generate UTF-8 bytes with the external printf utility, not the shell
+# builtin. Fedora dash 0.5.13 has shown locale-sensitive behavior in
+# its builtin printf here, while this test needs an exact byte fixture.
+# env forces a PATH lookup and execs the utility instead of using dash's
+# builtin. POSIX printf specifies \ddd in the format string as octal
+# byte output.
+unicode_suffix=$(LC_ALL=C env printf '\303\274')
 gen=$(hw_gen_new); dest="$_T_TMP/path with spaces [*] $unicode_suffix"
 hw_config_add config/file file "$gen" mod; hw_config_link file "$dest" mod "$gen"; hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
 assert_link "$dest" "$(hw_current)/config/mod/file" "hostile destination link is created exactly"
