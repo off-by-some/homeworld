@@ -1,6 +1,6 @@
 # Homeworld Reference
 
-This is the complete command surface, storage model, and set of guarantees. It assumes you've read the [main README](../README.md) and know the shape of a module.
+This is the reference for Homeworld's commands, storage layout, and promises. It assumes you've read the [main README](../README.md) and know the shape of a module.
 
 ## Contents
 
@@ -58,7 +58,7 @@ homeworld generation gc
 homeworld module path
 ```
 
-Resource-creation commands require module installation context. They are called from an install hook. `state bind`, `repo update`, path queries, and generation operations are ordinary runtime commands you can run at any time.
+Resource-creation commands are meant to run from a module's install hook. `state bind`, `repo update`, path queries, and generation operations are normal runtime commands you can run yourself.
 
 The old top-level `rollback`, `generations`, `gc`, and `path` forms fail with migration guidance.
 
@@ -66,7 +66,7 @@ The old top-level `rollback`, `generations`, `gc`, and `path` forms fail with mi
 
 ## Command-line output
 
-Human-facing output uses stable uppercase labels so it is easy to scan and easy to grep. Status words stay in the first column of tables, and color, when enabled, decorates only the status word.
+Output uses stable uppercase labels so it is easy to scan and grep. Status words stay in the first column of tables, and color, when enabled, decorates only the status word.
 
 The install plan is a table. Nested modules are indented in the `MODULE` column, while `INSTALL` and `SKIP` remain fixed in the `STATUS` column:
 
@@ -203,7 +203,7 @@ One asymmetry is worth memorizing: **config, asset, and repo links point through
 
 ## Writing good modules
 
-Homeworld's guarantees cover what its primitives do. A hook is plain shell, so it *can* do anything — and everything it does outside the primitives runs outside the transaction: no rollback, no ownership checks, no cleanup. These practices keep your modules inside the part of the system that keeps promises.
+Homeworld can only protect the work it knows about. A hook is plain shell, so it *can* do anything — and anything it does outside the resource commands is outside the transaction: no rollback, no ownership checks, no cleanup. These habits keep most module work where Homeworld can cleanly roll it back.
 
 **No live mutation in module hooks.** A hook should only calculate values, generate files under a temporary build location, and invoke resource declarations. It should not edit files in `$HOME`, restart services, or otherwise modify the environment you're currently using — that's what `link` and activation are for, and they do it transactionally. Any unavoidable side effect (running `pyenv install`, initializing a database) should be isolated in its own clearly named function, documented, and idempotent — so the deliberate exceptions are easy to find and safe to re-run.
 
@@ -504,7 +504,7 @@ Activation then:
 
 Step 8 is conservative ownership at work: if something else changed a link Homeworld thought it owned, Homeworld leaves it alone rather than deleting a stranger's work.
 
-**Every Homeworld invocation checks for an unfinished journal before doing anything else.** Recovery is automatic. No repair command exists because nothing needs repairing by hand.
+At startup, Homeworld checks for an unfinished journal and recovers it before doing anything else. There is no manual repair command.
 
 Rollback is not a special code path — it invokes the same activation transaction with the previous generation as its target.
 
@@ -521,7 +521,7 @@ homeworld update --dependencies --install  # + build and activate the result
 homeworld update --dependencies --apply    # same as --install
 ```
 
-Each flag adds one step. `update` alone changes nothing about your active environment — it fetches and fast-forwards a managed setup repository. Local directory sources are left untouched. Nothing builds or activates until `--install` or its alias, `--apply`.
+Each flag adds a little more work. `update` alone changes nothing about your active environment — it fetches and fast-forwards a managed setup repository. Local directory sources are left untouched. Nothing builds or activates until `--install` or its alias, `--apply`.
 
 ```sh
 homeworld install --reinstall
@@ -545,7 +545,7 @@ global generation/transaction lock
 
 Install, activation, rollback, generation GC, reinstall cleanup, and state rebinding take the global lock. Repository fetch and checkout creation take source-specific locks. GC takes the global lock *before* any source lock.
 
-That ordering is what stops GC from deleting a checkout out from under an in-progress build: a generation still being built counts as in use, exactly like `current` and `previous`, even though nothing points at it yet.
+That ordering keeps GC from deleting a checkout out from under an in-progress build. A generation still being built counts as in use, just like `current` and `previous`, even though nothing points at it yet.
 
 After activation or an explicit `generation gc`:
 
@@ -565,7 +565,7 @@ Directory locks contain a PID and a process-start fingerprint, so a dead owner �
 
 Generation metadata, repository manifests, managed links, state bindings, and journals all carry a `schema-version`.
 
-Readers accept supported legacy metadata where they can. Missing mandatory metadata, or an unknown *newer* schema, fails clearly. Homeworld does not guess at a partially upgraded structure — a wrong guess about a generation's layout is a corrupted environment, and a clear error isn't.
+Readers accept supported legacy metadata where they can. Missing mandatory metadata, or an unknown *newer* schema, fails clearly. Homeworld does not guess at a partially upgraded structure; a bad guess about a generation layout is worse than a clear error.
 
 The Homeworld binary is installed independently, so it can be newer than the generations you've retained. Rollback therefore reads metadata from the selected generation and validates its schema at use time, not install time.
 

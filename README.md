@@ -6,7 +6,7 @@
 
 <p align="center"><i>A personal provisioning runtime.</i></p>
 
-**Homeworld** makes setting up a machine feel like restoring it rather than rebuilding it. Your shell configuration, the scripts living in `~/bin` on exactly one computer, the packages you always install, the tools you clone from GitHub — Homeworld gathers them into one Git repository and makes every machine you own match it. Change something on your desktop, push, run `homeworld update --install` on your laptop. Keeping machines in sync stops being a discipline you maintain and becomes a property of the system.
+**Homeworld** makes setting up a machine feel like restoring it rather than rebuilding it. Your shell configuration, the scripts living in `~/bin` on exactly one computer, the packages you always install, the tools you clone from GitHub — Homeworld gathers them into one Git repository and makes every machine you own match it. Change something on your desktop, push, run `homeworld update --install` on your laptop, and get back to work.
 
 And because every change builds off to the side and activates as a transaction, a broken install can't take your working environment with it. If a build fails, nothing changed. If it succeeds and you regret it, one command puts the previous environment back.
 
@@ -76,7 +76,7 @@ Homeworld is built for the gap between "a dotfiles repo" and "adopting Nix." It 
 * **You want rollback** — the ability to try a change and cleanly step back — without learning a new language to describe your computer
 * **You've been burned** — by a setup script that died halfway through and left the machine half-configured
 
-The common thread: your environment is an accumulation of small decisions, and you want it to be a *document* instead — one you can version, share between machines, and safely regenerate. If you have fifteen dotfiles and one laptop, Homeworld is more machinery than you need; see the [comparison table](#where-another-tool-fits-better) below for lighter options.
+The common thread: your environment is an accumulation of small decisions, and you want it written down somewhere — versioned, shared between machines, and safe to rebuild. If you have fifteen dotfiles and one laptop, Homeworld is probably more than you need; see the [comparison table](#where-another-tool-fits-better) below for lighter options.
 
 ## The Resources
 
@@ -154,7 +154,7 @@ ripgrep
 fzf
 ```
 
-Homeworld detects the platform and hands the right list to the right manager. Note what this feature is and isn't: packages here are *names*, resolved by your OS's package manager, and Homeworld ships no machinery for pinning their versions. If you need a tool at an exact version, the usual move is to reach for a resource that *is* exact — declare it as a repo pinned to a commit and build it, or wrap it in a command that runs a specific container image. And since `install.sh` is plain shell, nothing stops a module from pinning package versions itself; Homeworld just doesn't manage that for you, and it stays outside rollback either way. (Details in [Guarantees](#guarantees--and-their-limits).)
+Homeworld detects the platform and hands the right list to the right manager. Packages here are still just package names; `brew`, `apt`, `dnf`, or `pacman` decide which versions they mean. If you need an exact version, use something Homeworld can pin, like a repo at a commit, or write the pinning yourself in `install.sh`. Homeworld will run that shell, but it won't make those side effects part of rollback. (Details in [Guarantees](#guarantees--and-their-limits).)
 
 | Platform | Package provider | Status |
 |---|---|---|
@@ -234,7 +234,7 @@ homeworld repo link pyenv "$HOME/.pyenv"
 homeworld state bind pyenv-versions "$HOME/.pyenv/versions"
 ```
 
-This split runs through the whole system: repos and assets are immutable resources Homeworld can rebuild, while state is mutable data it only points at. It's also what makes the next section's guarantees safe to give: Homeworld can swap and discard environments freely because your data was never inside them.
+That split shows up everywhere in Homeworld: repos and assets are things it can rebuild, while state is data it only points at. Homeworld can throw away old environments because your data was never inside them.
 
 ## The Generation Guarantee
 
@@ -253,13 +253,13 @@ Only when the entire build succeeds does Homeworld **activate** the new generati
 homeworld generation rollback     # the previous environment, back, atomically
 ```
 
-This buys you three promises:
+The practical result:
 
 * **A failed build changes nothing.** The generation you were using stays active; the broken one is discarded. There is no "died halfway through the setup script" state.
 * **Interruption is recoverable.** Activation writes a journal before it mutates anything. Kill the process mid-swap — `Ctrl-C`, `kill`, a dropped SSH session — and the next Homeworld command finds the journal and finishes or reverses the transaction automatically. No repair command exists because none is needed.
 * **Rollback is real.** The previous generation is a complete environment, kept on disk, one command away. Old generations beyond that are garbage-collected only after a successful activation — never before.
 
-All of this careful machinery lives in the runtime, not in your files. Modules stay folders, manifests stay shell variables, package lists stay text files — so a setup repository remains readable to anyone who can read a directory tree, including you in two years.
+The runtime handles the fussy part. Modules stay folders, manifests stay shell variables, package lists stay text files — so a setup repository remains readable to anyone who can read a directory tree, including you in two years.
 
 ## Everyday Commands
 
@@ -291,11 +291,11 @@ Homeworld sits between symlink managers and full declarative systems. Depending 
 | Project-level language runtimes and tasks | mise |
 | Remote hosts, servers, fleets | Ansible |
 
-A useful way to read this table: it's mostly about *built-in machinery*, not hard limits. Chezmoi ships a template engine and secret-manager integrations; in Homeworld, `install.sh` is plain shell, so per-host logic or fetching secrets from your password manager are things you write, not things you configure. Nix Home Manager makes exact package closures the default; in Homeworld you get exactness where you build from pinned sources — repos at exact commits, tools compiled in `install.sh`, commands backed by specific container images — while anything delegated to `brew` or `apt` resolves to whatever your OS ships today. Homeworld's bet is that for a personal machine, that division of labor is the right default: exactness where it's cheap, your OS's package manager where it isn't, and a much lower cost of entry — your existing dotfiles are most of a setup repository already, and there's no new language to learn.
+This table is mostly about what each tool gives you out of the box. Chezmoi has templating and secret-manager integrations; in Homeworld, `install.sh` is plain shell, so per-host logic and secret fetching are code you write. Nix Home Manager pins package closures; Homeworld pins what it owns directly, like repos at exact commits or commands you build yourself, while leaving OS packages to `brew`, `apt`, `dnf`, or `pacman`. The tradeoff is that your existing dotfiles are already most of a setup repository, and there is no new language to learn.
 
 ## Guarantees — and Their Limits
 
-A provisioning tool earns trust by stating its boundary precisely.
+Here is the line Homeworld tries not to cross.
 
 **What Homeworld promises:**
 
@@ -312,11 +312,11 @@ A provisioning tool earns trust by stating its boundary precisely.
 * **Power-loss durability isn't claimed.** Portable POSIX shell has no reliable cross-platform `fsync`. Homeworld uses temp files and atomic renames, but makes no promises about kernel panics or storage-controller reordering.
 * **Setup repositories are trusted code.** Manifests and `install.sh` run with your privileges. Pin repos you trust; read modules you didn't write.
 
-The [full reference](docs/README.md) states each boundary in exact terms, down to symlink-replacement semantics per platform.
+The [full reference](docs/README.md) has the narrower details, including how symlink replacement works on each platform.
 
 ## Documentation & Support
 
-* [**Full Reference**](docs/README.md) — every manifest field, resource verb, command, and the storage and transaction model in depth
+* [**Full Reference**](docs/README.md) — every manifest field, resource verb, command, and the storage and transaction model
 * [**Issues**](https://github.com/off-by-some/homeworld/issues) — bug reports and questions
 
 <p align="center">
