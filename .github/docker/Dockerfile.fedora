@@ -1,5 +1,6 @@
 FROM fedora:latest
 RUN dnf install -y git ncurses dash busybox && dnf clean all
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 ENV PATH="/root/.local/bin:$PATH"
 WORKDIR /homeworld
 COPY . .
