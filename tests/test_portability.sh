@@ -19,7 +19,11 @@ HOMEWORLD_MODULE_ROOT="$module"; export HOMEWORLD_MODULE_ROOT
 # byte output.
 unicode_suffix=$(LC_ALL=C env printf '\303\274')
 gen=$(hw_gen_new); dest="$_T_TMP/path with spaces [*] $unicode_suffix"
-hw_config_add config/file file "$gen" mod; hw_config_link file "$dest" mod "$gen"; hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
+hw_config_add config/file file "$gen" mod; hw_config_link file "$dest" mod "$gen"
+entry=$(hw_managed_find_by_dest "$(hw_managed_links_dir "$gen")" "$dest" 2>/dev/null || printf '')
+[ -n "$entry" ] && recorded_dest=$(cat "$entry/dest" 2>/dev/null || printf '') || recorded_dest=''
+assert_eq "$recorded_dest" "$dest" "hostile destination bytes survive metadata write"
+hw_gen_write_meta "$gen" linux test '' mod; hw_gen_activate "$gen"
 assert_link "$dest" "$(hw_current)/config/mod/file" "hostile destination link is created exactly"
 assert_eq "$(cat "$dest")" value "spaces, glob characters, and Unicode work"
 (hw_managed_link_record "$_T_TMP/bad

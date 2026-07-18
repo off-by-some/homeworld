@@ -306,8 +306,8 @@ cmd_init() {
     fi
 
     mkdir -p "$HW_STATE"
-    printf '%s' "$_ci_source" > "$HW_STATE/source"
-    printf '%s' "$_ci_mode"   > "$HW_STATE/source-mode"
+    hw_write_bytes "$HW_STATE/source" "$_ci_source"
+    hw_write_bytes "$HW_STATE/source-mode" "$_ci_mode"
 
     hw_log "source configured: $_ci_source (mode: $_ci_mode)"
     hw_log ""

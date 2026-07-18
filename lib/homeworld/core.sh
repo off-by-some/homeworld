@@ -197,6 +197,16 @@ hw_validate_name() {
     esac
 }
 
+# Write byte-exact metadata values. Use the external printf utility, not the
+# shell builtin: several shells have locale-sensitive printf behavior for
+# non-ASCII variables, while path metadata must round-trip as bytes. The format
+# string is constant, so this is not exposed to format-string interpretation.
+hw_write_bytes() {
+    _hwb_path=$1
+    _hwb_value=$2
+    env printf '%s' "$_hwb_value" > "$_hwb_path"
+}
+
 # Atomic replacement for small metadata files. The temporary file is created
 # beside the destination so the final rename never crosses a filesystem.
 hw_atomic_write() {
@@ -207,7 +217,7 @@ hw_atomic_write() {
     mkdir -p "$_haw_parent" || return 1
     _haw_old_umask=$(umask)
     umask 077
-    if ! printf '%s' "$_haw_value" > "$_haw_tmp"; then
+    if ! hw_write_bytes "$_haw_tmp" "$_haw_value"; then
         umask "$_haw_old_umask"
         rm -f "$_haw_tmp"
         return 1

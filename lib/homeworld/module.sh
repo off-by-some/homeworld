@@ -116,13 +116,13 @@ hw_module_load() {
     _hml_req=$(printf '%s\n' "$_hml_output" | grep '^REQUIRES=' | head -1)
     _hml_req="${_hml_req#REQUIRES=}"
 
-    printf '%s' "$_hml_dir"   > "$_hml_dest/path"
-    printf '%s' "$_hml_plat"  > "$_hml_dest/platforms"
-    printf '%s' "$_hml_dist"  > "$_hml_dest/distros"
-    printf '%s' "$_hml_deps"  > "$_hml_dest/depends"
-    printf '%s' "${_hml_auto:-true}" > "$_hml_dest/auto_install"
-    printf '%s' "$_hml_desc"  > "$_hml_dest/description"
-    printf '%s' "$_hml_req"   > "$_hml_dest/requires"
+    hw_write_bytes "$_hml_dest/path" "$_hml_dir"
+    hw_write_bytes "$_hml_dest/platforms" "$_hml_plat"
+    hw_write_bytes "$_hml_dest/distros" "$_hml_dist"
+    hw_write_bytes "$_hml_dest/depends" "$_hml_deps"
+    hw_write_bytes "$_hml_dest/auto_install" "${_hml_auto:-true}"
+    hw_write_bytes "$_hml_dest/description" "$_hml_desc"
+    hw_write_bytes "$_hml_dest/requires" "$_hml_req"
 
     printf '%s\n' "$_hml_name"
 }
@@ -135,7 +135,7 @@ hw_module_discover() {
     _hmd_moddir="$2"
 
     mkdir -p "$_hmd_moddir"
-    printf '%s' "$_hmd_source" > "$_hmd_moddir/.source-root"
+    hw_write_bytes "$_hmd_moddir/.source-root" "$_hmd_source"
 
     # The root sentinel is mandatory — without it we'd silently provision
     # an unrelated directory.

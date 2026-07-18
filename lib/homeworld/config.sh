@@ -14,12 +14,12 @@ hw_projection_write() {
     _hpw_value=$2
     rm -rf "$_hpw_path"
     mkdir -p "$(dirname "$_hpw_path")" || hw_die "cannot write projection metadata"
-    printf '%s' "$_hpw_value" > "$_hpw_path" || hw_die "cannot write projection metadata"
+    hw_write_bytes "$_hpw_path" "$_hpw_value" || hw_die "cannot write projection metadata"
 }
 
 hw_metadata_id() {
     _hmi_value=$1
-    if command -v git >/dev/null 2>&1; then printf '%s' "$_hmi_value" | git hash-object --stdin; else printf '%s' "$_hmi_value" | cksum | awk '{print $1}'; fi
+    if command -v git >/dev/null 2>&1; then env printf '%s' "$_hmi_value" | git hash-object --stdin; else env printf '%s' "$_hmi_value" | cksum | awk '{print $1}'; fi
 }
 
 hw_copy_resource() {
