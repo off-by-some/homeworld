@@ -29,7 +29,7 @@ homeworld list
 homeworld status
 homeworld doctor
 
-homeworld update [--dependencies] [--install]
+homeworld update [--dependencies] [--install|--apply] [--check] [--async]
 
 homeworld repo add <source> <namespace> [--ref <ref>]
 homeworld repo link <namespace> <destination>
@@ -325,7 +325,11 @@ homeworld command path self
 
 A command source is either a directory containing an executable `run`, or a plain executable file. Homeworld deploys it to `generation/commands/<module>/<name>/` and writes a launcher at `generation/bin/<name>`.
 
-The launcher exports `HOMEWORLD_COMMAND_DIR` and `exec`s your command — so a command directory can carry helper files and find them at runtime.
+The launcher exports `HOMEWORLD_COMMAND_DIR` and `exec`s your command — so a command directory can carry helper files and find them at runtime. Inside the command, `homeworld command path self` returns that directory:
+
+```sh
+cat "$(homeworld command path self)/banner.txt"
+```
 
 Command names are globally unique within a generation. Two modules claiming `greet` is a build-time error, not a race.
 
@@ -509,12 +513,15 @@ Rollback is not a special code path — it invokes the same activation transacti
 ## Updates and reinstall
 
 ```sh
-homeworld update                           # setup repository only
+homeworld update                           # fast-forward the managed setup repository
+homeworld update --check                   # report whether the setup repository is behind
+homeworld update --async                   # fetch the setup repository and exit
 homeworld update --dependencies            # + fetch repos the current generation declares
 homeworld update --dependencies --install  # + build and activate the result
+homeworld update --dependencies --apply    # same as --install
 ```
 
-Each flag adds one step. `update` alone changes nothing about your environment — it pulls a newer setup repository. Nothing builds or activates until `--install`.
+Each flag adds one step. `update` alone changes nothing about your active environment — it fetches and fast-forwards a managed setup repository. Local directory sources are left untouched. Nothing builds or activates until `--install` or its alias, `--apply`.
 
 ```sh
 homeworld install --reinstall

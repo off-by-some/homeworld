@@ -6,7 +6,7 @@
 
 <p align="center"><i>A personal provisioning runtime.</i></p>
 
-**Homeworld** makes setting up a machine feel like restoring it rather than rebuilding it. Your shell configuration, the scripts living in `~/bin` on exactly one computer, the packages you always install, the tools you clone from GitHub — Homeworld gathers them into one Git repository and makes every machine you own match it. Change something on your desktop, push, run `homeworld update` on your laptop. Keeping machines in sync stops being a discipline you maintain and becomes a property of the system.
+**Homeworld** makes setting up a machine feel like restoring it rather than rebuilding it. Your shell configuration, the scripts living in `~/bin` on exactly one computer, the packages you always install, the tools you clone from GitHub — Homeworld gathers them into one Git repository and makes every machine you own match it. Change something on your desktop, push, run `homeworld update --install` on your laptop. Keeping machines in sync stops being a discipline you maintain and becomes a property of the system.
 
 And because every change builds off to the side and activates as a transaction, a broken install can't take your working environment with it. If a build fails, nothing changed. If it succeeds and you regret it, one command puts the previous environment back.
 
@@ -47,18 +47,13 @@ homeworld config add config/.zshrc zshrc
 homeworld config link zshrc "$HOME/.zshrc"
 ```
 
-Point Homeworld at the repository and install:
+Point Homeworld at the repository. `init` records the source and runs the first install:
 
 ```sh
 homeworld init ~/dotfiles
-homeworld install
 ```
 
-```text
-✓ zsh — config/.zshrc → ~/.zshrc
-✓ Generation 1 built
-✓ Activated
-```
+Homeworld prints a module plan, builds a generation, and activates it only after the build succeeds.
 
 Your `~/.zshrc` is now a managed link into Homeworld's environment. Edit the copy in `~/dotfiles`, run `homeworld install`, and the change is live — on *this* machine. For every other machine:
 
@@ -66,10 +61,9 @@ Your `~/.zshrc` is now a managed link into Homeworld's environment. Edit the cop
 git push                                          # on your desktop
 
 homeworld init git@github.com:you/dotfiles.git    # on your laptop, once
-homeworld install                                 # same zshrc, same everything
 ```
 
-From now on, `homeworld update --dependencies --install` on any machine pulls your latest setup and rebuilds. That's the loop. Everything else in this README is about what you can put inside a module, and what Homeworld guarantees when it builds one.
+That first laptop command clones the setup repository, records it, and installs the same zshrc. From then on, `homeworld update --dependencies --install` on any machine fetches your latest setup and rebuilds. That's the loop. Everything else in this README is about what you can put inside a module, and what Homeworld guarantees when it builds one.
 
 ## Where Homeworld Applies
 
@@ -273,7 +267,8 @@ All of this careful machinery lives in the runtime, not in your files. Modules s
 homeworld install                          # build a generation and activate it
 homeworld install --dry-run                # preview the module and package plan
 homeworld install --reinstall              # rebuild from scratch — old generation stays active until the new one succeeds
-homeworld update                           # pull the latest setup repository
+homeworld update                           # fast-forward a managed setup repository
+homeworld update --check                   # report whether the setup repository is behind
 homeworld update --dependencies            # also fetch pinned repos
 homeworld update --dependencies --install  # fetch everything and build a new generation
 homeworld generation rollback              # activate the previous generation
@@ -324,24 +319,8 @@ The [full reference](docs/README.md) states each boundary in exact terms, down t
 * [**Full Reference**](docs/README.md) — every manifest field, resource verb, command, and the storage and transaction model in depth
 * [**Issues**](https://github.com/off-by-some/homeworld/issues) — bug reports and questions
 
-<br>
-
-## 🌟 Love Homeworld?
-
-Support the project by [**starring the repository**](https://github.com/off-by-some/homeworld) ⭐
-
-***
-
-<br>
-
 <p align="center">
   <strong>Homeworld</strong> — a personal provisioning runtime
-</p>
-
-<p align="center">
-  <a href="https://github.com/off-by-some/homeworld/blob/main/LICENSE">License</a> •
-  <a href="https://github.com/off-by-some/homeworld/blob/main/CONTRIBUTING.md">Contributing</a> •
-  <a href="https://github.com/off-by-some/homeworld/blob/main/CODE_OF_CONDUCT.md">Code of Conduct</a>
 </p>
 
 <p align="center">
