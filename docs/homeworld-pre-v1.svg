@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 340" role="img" aria-labelledby="title desc">
+  <title id="title">Homeworld is under construction</title>
+  <desc id="desc">Homeworld is pre-version-one software under active development. Concepts and interfaces may change suddenly. Pin the exact commit when using Homeworld.</desc>
+
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#35BDF8"/>
+      <stop offset="50%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#F472B6"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#101827"/>
+      <stop offset="58%" stop-color="#171A36"/>
+      <stop offset="100%" stop-color="#281A45"/>
+    </linearGradient>
+    <linearGradient id="planet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7DD3FC"/>
+      <stop offset="46%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#F472B6"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="20"/>
+    </filter>
+    <clipPath id="clip">
+      <rect x="4" y="4" width="1272" height="332" rx="30"/>
+    </clipPath>
+  </defs>
+
+  <rect x="2" y="2" width="1276" height="336" rx="32" fill="url(#frame)"/>
+  <rect x="5" y="5" width="1270" height="330" rx="29" fill="url(#panel)"/>
+
+  <g clip-path="url(#clip)">
+    <circle cx="1135" cy="40" r="132" fill="#8B5CF6" opacity="0.12" filter="url(#glow)"/>
+    <circle cx="1030" cy="320" r="150" fill="#38BDF8" opacity="0.07" filter="url(#glow)"/>
+    <path d="M0 282 C210 240, 394 314, 640 277 S1015 226, 1280 286 L1280 340 L0 340 Z" fill="#FFFFFF" opacity="0.028"/>
+
+    <!-- Illustration column -->
+    <g transform="translate(96 62)">
+      <circle cx="112" cy="104" r="57" fill="url(#planet)"/>
+      <ellipse cx="112" cy="104" rx="94" ry="29" fill="none" stroke="#E9D5FF" stroke-width="7" opacity="0.94" transform="rotate(-13 112 104)"/>
+      <ellipse cx="112" cy="104" rx="94" ry="29" fill="none" stroke="#111827" stroke-width="3" opacity="0.82" transform="rotate(-13 112 104)"/>
+      <circle cx="88" cy="82" r="13" fill="#FFFFFF" opacity="0.28"/>
+      <circle cx="143" cy="130" r="20" fill="#111827" opacity="0.16"/>
+      <path d="M55 36 L69 22 M161 34 L176 18 M43 172 L27 187" stroke="#FBBF24" stroke-width="7" stroke-linecap="round"/>
+      <path d="M43 218 H181" stroke="#FBBF24" stroke-width="13" stroke-linecap="round"/>
+      <path d="M66 218 L84 200 M103 218 L121 200 M140 218 L158 200" stroke="#111827" stroke-width="7" stroke-linecap="round" opacity="0.78"/>
+    </g>
+
+    <!-- Vertical divider -->
+    <line x1="366" y1="70" x2="366" y2="270" stroke="#FFFFFF" stroke-width="1" opacity="0.09"/>
+
+    <!-- Content column -->
+    <g transform="translate(418 70)">
+      <!-- Badge -->
+      <rect x="0" y="0" width="286" height="34" rx="17" fill="#5B3A1F" opacity="0.56"/>
+      <circle cx="21" cy="17" r="5" fill="#F8C64B"/>
+      <text x="38" y="22.5"
+            fill="#F9E8A6"
+            font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+            font-size="14" font-weight="700" letter-spacing="2.2">PRE-v1 · UNDER CONSTRUCTION</text>
+
+      <!-- Heading -->
+      <text x="0" y="92"
+            fill="#F8FAFC"
+            font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+            font-size="42" font-weight="800" letter-spacing="-1.4">Homeworld is still being built.</text>
+
+      <!-- Body -->
+      <text x="0" y="140"
+            fill="#C7D0E2"
+            font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+            font-size="18" font-weight="400" letter-spacing="0.1">
+        <tspan x="0" dy="0">Homeworld is being tested on real machines, so concepts and</tspan>
+        <tspan x="0" dy="28">interfaces may change suddenly. The documentation describes how it</tspan>
+        <tspan x="0" dy="28">works today, but those promises may still evolve before version 1.</tspan>
+      </text>
+    </g>
+  </g>
+</svg>
