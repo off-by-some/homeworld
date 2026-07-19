@@ -4,6 +4,8 @@
   <img src="docs/banner.png" alt="Homeworld — a personal provisioning runtime" style="border-radius: 16px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12); max-width: 100%; height: auto;">
 </p>
 
+
+
 <p align="center" style="margin-bottom: 0">
   <a href="https://github.com/off-by-some/homeworld/actions/workflows/test.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/off-by-some/homeworld/test.yml?branch=main&label=CI&color=2E8B57" alt="CI">
@@ -44,6 +46,7 @@ Add one line to your `.zshrc` or `.bashrc` so Homeworld-managed commands are on 
     . "${XDG_CONFIG_HOME:-$HOME/.config}/homeworld/env.sh"
 ```
 
+
 For a quick example, let's put a real file under management. Homeworld reads your setup from a **setup repository** — an ordinary Git repository (or just a directory, to start) containing **modules**. A module is a folder that owns one piece of your setup: your shell, your editor, your scripts. Here's a repository with one module in it, managing the `.zshrc` you already have:
 
 ```text
@@ -83,6 +86,13 @@ homeworld init git@github.com:you/dotfiles.git    # on your laptop, once
 ```
 
 That first laptop command clones the setup repository, records it, and installs the same zshrc. From then on, `homeworld update --dependencies --install` on any machine fetches your latest setup and rebuilds. That's the loop. Everything else in this README is about what you can put inside a module, and what Homeworld guarantees when it builds one.
+
+<img
+  src="docs/homeworld-pre-v1.svg"
+  width="100%"
+  alt="Homeworld is under construction and has not reached version 1. It is being tested on real machines, so concepts and interfaces may change suddenly. The documentation describes how it works today, but those promises may still evolve before version 1."
+/>
+
 
 ## Where Homeworld Applies
 
