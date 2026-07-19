@@ -267,5 +267,12 @@ assert_not_eq() {
 }
 
 assert_read_only() {
-    if [ ! -w "$1" ]; then ok "${2:-read-only: $1}"; else fail "${2:-expected read-only: $1}"; fi
+    _aro_mode=$(ls -ld "$1" 2>/dev/null | awk '{print $1}') || {
+        fail "${2:-expected read-only: $1}"
+        return
+    }
+    case "$_aro_mode" in
+        ??w* | ?????w* | ????????w*) fail "${2:-expected read-only: $1}" ;;
+        *) ok "${2:-read-only: $1}" ;;
+    esac
 }

@@ -33,11 +33,7 @@ gen=$(hw_gen_new)
 (hw_asset_add tree bundle "$gen" mod) >/dev/null 2>&1
 assert_0 "$?" "directory asset publish succeeds"
 assert_dir "$gen/assets/mod/bundle" "directory asset is published"
-if [ -w "$gen/assets/mod/bundle" ]; then
-    fail "published directory asset is read-only"
-else
-    ok "published directory asset is read-only"
-fi
+assert_read_only "$gen/assets/mod/bundle" "published directory asset is read-only"
 teardown_env
 
 
