@@ -45,8 +45,8 @@
 
   <g clip-path="url(#clip)">
     <!-- Light rays sweeping from the sphere -->
-    <polygon points="240,60 1280,0 1280,44 300,140" fill="url(#ray)"/>
-    <polygon points="250,120 1280,120 1280,150 300,175" fill="url(#ray)" opacity="0.7"/>
+    <polygon points="240,60 1280,0 1280,44 300,140" fill="url(#ray)" opacity="0.75"/>
+    <polygon points="250,120 1280,120 1280,150 300,175" fill="url(#ray)" opacity="0.55"/>
 
     <!-- Starfield -->
     <g fill="#EDE6FF">
@@ -55,11 +55,11 @@
       <circle cx="840" cy="40" r="1.6" opacity="0.8"/>
       <circle cx="985" cy="74" r="1.1" opacity="0.5"/>
       <circle cx="1210" cy="150" r="1.3" opacity="0.6"/>
-      <circle cx="640" cy="300" r="1.2" opacity="0.5"/>
+      <circle cx="565" cy="316" r="1.2" opacity="0.5"/>
       <circle cx="900" cy="312" r="1.5" opacity="0.6"/>
       <circle cx="1120" cy="288" r="1.1" opacity="0.5"/>
       <path d="M1058 42 l2.2 5.8 5.8 2.2 -5.8 2.2 -2.2 5.8 -2.2 -5.8 -5.8 -2.2 5.8 -2.2 Z" opacity="0.85"/>
-      <path d="M760 258 l1.8 4.6 4.6 1.8 -4.6 1.8 -1.8 4.6 -1.8 -4.6 -4.6 -1.8 4.6 -1.8 Z" opacity="0.6"/>
+      <path d="M1078 234 l1.8 4.6 4.6 1.8 -4.6 1.8 -1.8 4.6 -1.8 -4.6 -4.6 -1.8 4.6 -1.8 Z" opacity="0.6"/>
       <path d="M1236 66 l1.6 4.2 4.2 1.6 -4.2 1.6 -1.6 4.2 -1.6 -4.2 -4.2 -1.6 4.2 -1.6 Z" opacity="0.7"/>
     </g>
 
@@ -72,13 +72,14 @@
     <g transform="translate(210 170)">
       <circle r="128" fill="url(#sphereGlow)" filter="url(#soft)"/>
       <circle r="78" fill="url(#sphere)"/>
+      <circle r="78" fill="none" stroke="#B6A2E6" stroke-width="1.2" opacity="0.55"/>
       <ellipse rx="126" ry="30" fill="none" stroke="#E6DCFA" stroke-width="2.5" opacity="0.9" transform="rotate(-10)"/>
       <ellipse rx="126" ry="30" fill="none" stroke="#8F7AC8" stroke-width="1" opacity="0.6" transform="rotate(-10) translate(0 5)"/>
       <ellipse rx="104" ry="22" fill="none" stroke="#CDBCF0" stroke-width="1.2" opacity="0.5" transform="rotate(-10)"/>
       <!-- Spire -->
-      <path d="M0 -78 L0 -128" stroke="#F4EEFF" stroke-width="1.6" opacity="0.9"/>
-      <path d="M0 -140 l5 9 -5 9 -5 -9 Z" fill="#FFFFFF" opacity="0.95"/>
-      <circle cx="-26" cy="-24" r="12" fill="#FFFFFF" opacity="0.5"/>
+      <path d="M0 -64 L0 -126" stroke="#F4EEFF" stroke-width="1.6" opacity="0.9"/>
+      <path d="M0 -144 l5 10 -5 10 -5 -10 Z" fill="#FFFFFF" opacity="0.95"/>
+      <circle cx="-22" cy="-22" r="11" fill="#FFFFFF" opacity="0.4"/>
       <circle cx="24" cy="30" r="18" fill="#8F76CE" opacity="0.18"/>
     </g>
 
@@ -86,10 +87,10 @@
     <g transform="translate(430 0)" font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
       <!-- Badge with flanking rules -->
       <g fill="#C9B8F0">
-        <line x1="0" y1="80" x2="70" y2="80" stroke="#8F7AC8" stroke-width="1" opacity="0.55"/>
-        <text x="88" y="85" font-size="13" font-weight="600" letter-spacing="4">PRE-V1  ·  UNDER CONSTRUCTION</text>
-        <line x1="418" y1="80" x2="488" y2="80" stroke="#8F7AC8" stroke-width="1" opacity="0.55"/>
-        <path d="M79 80 l4 -4 4 4 -4 4 Z" opacity="0.9"/>
+        <line x1="0" y1="80" x2="58" y2="80" stroke="#8F7AC8" stroke-width="1" opacity="0.55"/>
+        <path d="M72 76 l4 4 -4 4 -4 -4 Z" opacity="0.9"/>
+        <text x="96" y="85" font-size="13" font-weight="600" letter-spacing="4">PRE-V1  ·  UNDER CONSTRUCTION</text>
+        <line x1="446" y1="80" x2="516" y2="80" stroke="#8F7AC8" stroke-width="1" opacity="0.55"/>
       </g>
 
       <!-- Headline -->

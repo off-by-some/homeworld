@@ -91,7 +91,7 @@ That first laptop command clones the setup repository, records it, and installs 
 ## Where Homeworld Applies
 
 <img
-  src="docs/homeworld-pre-v1.svg"
+  src="docs/pre-v1.svg"
   width="100%"
   alt="Homeworld is under construction and has not reached version 1. It is being tested on real machines, so concepts and interfaces may change suddenly. The documentation describes how it works today, but those promises may still evolve before version 1."
 />
