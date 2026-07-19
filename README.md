@@ -87,12 +87,7 @@ homeworld init git@github.com:you/dotfiles.git    # on your laptop, once
 
 That first laptop command clones the setup repository, records it, and installs the same zshrc. From then on, `homeworld update --dependencies --install` on any machine fetches your latest setup and rebuilds. That's the loop. Everything else in this README is about what you can put inside a module, and what Homeworld guarantees when it builds one.
 
-<img
-  src="docs/homeworld-pre-v1.svg"
-  width="100%"
-  alt="Homeworld is under construction and has not reached version 1. It is being tested on real machines, so concepts and interfaces may change suddenly. The documentation describes how it works today, but those promises may still evolve before version 1."
-/>
-
+![Homeworld pre-v1 notice](./docs/homeworld-pre-v1.svg)
 
 ## Where Homeworld Applies
 
