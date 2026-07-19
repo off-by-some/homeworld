@@ -24,6 +24,23 @@ assert_nonzero "$?" "symlink asset source rejected"
 teardown_env
 
 
+section "directory asset publication precedes read-only freeze"
+setup_env
+module="$_T_TMP/module"; mkdir -p "$module/tree/sub"
+printf payload > "$module/tree/sub/file"
+HOMEWORLD_MODULE_ROOT="$module"; export HOMEWORLD_MODULE_ROOT
+gen=$(hw_gen_new)
+(hw_asset_add tree bundle "$gen" mod) >/dev/null 2>&1
+assert_0 "$?" "directory asset publish succeeds"
+assert_dir "$gen/assets/mod/bundle" "directory asset is published"
+if [ -w "$gen/assets/mod/bundle" ]; then
+    fail "published directory asset is read-only"
+else
+    ok "published directory asset is read-only"
+fi
+teardown_env
+
+
 section "asset CLI is explicitly add then link"
 setup_cli_env
 source_dir="$_T_TMP/source"; make_module "$source_dir" root

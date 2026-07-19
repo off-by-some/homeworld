@@ -38,13 +38,14 @@ hw_copy_resource() {
     else
         cp "$_hcr_source" "$_hcr_tmp" || { rm -f "$_hcr_tmp"; hw_die "could not stage resource"; }
     fi
-    # Resources are generation-owned snapshots. They may be replaced while a
-    # generation is still pending, but a completed resource should not behave
-    # like a writable pointer back to the module workspace.
-    chmod -R a-w "$_hcr_tmp" 2>/dev/null || true
     hw_tree_make_removable "$_hcr_dest"
     rm -rf "$_hcr_dest"
     mv "$_hcr_tmp" "$_hcr_dest" || hw_die "could not publish staged resource"
+    # Resources are generation-owned snapshots. They may be replaced while a
+    # generation is still pending, but a completed resource should not behave
+    # like a writable pointer back to the module workspace. Apply this after
+    # publication because some platforms refuse to rename a read-only directory.
+    chmod -R a-w "$_hcr_dest" 2>/dev/null || true
 }
 
 hw_config_add() {
