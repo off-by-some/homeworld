@@ -105,7 +105,7 @@ Homeworld is built for the gap between "a dotfiles repo" and "adopting Nix." It 
 * **You want rollback** — the ability to try a change and cleanly step back — without learning a new language to describe your computer
 * **You've been burned** — by a setup script that died halfway through and left the machine half-configured
 
-The common thread: your environment is an accumulation of small decisions, and you want it written down somewhere — versioned, shared between machines, and safe to rebuild. If you have fifteen dotfiles and one laptop, Homeworld is probably more than you need; see the [comparison table](#where-another-tool-fits-better) below for lighter options.
+Basically, you believe your environment is an accumulation of small decisions, and you want those written down somewhere — versioned, shared between machines, and safe to rebuild. If you have fifteen dotfiles and one laptop, Homeworld is probably more than you need; see the [comparison table](#where-another-tool-fits-better) below for lighter options.
 
 ## The Resources
 
@@ -235,7 +235,7 @@ Homeworld presents a composed repository view: the original checkout plus the im
 
 ## State — the data that's yours, not Homeworld's
 
-Homeworld rebuilds its environments freely — that's what makes updates and rollback safe — but pyenv itself expects parts of `~/.pyenv` to be writable. The checkout is code. Installed Python versions, regenerated shims, download caches, and the global `version` file are local data.
+Homeworld rebuilds its environments freely — that's what makes updates and rollback safe — but some configurations such as pyenv itself expects parts of `~/.pyenv` to be writable. The checkout is just the code. Installed Python versions, regenerated shims, download caches, and the global `version` file are local data.
 
 **State** is how a module draws that line. The pyenv code is pinned as a repo; the writable paths live somewhere stable outside the generation and are linked back into the pyenv root:
 
@@ -260,11 +260,11 @@ homeworld state link "$pyenv_state_root/cache" "$HOME/.pyenv/cache"
 homeworld state link "$pyenv_state_root/version" "$HOME/.pyenv/version"
 ```
 
-Homeworld owns the links, not the data. It never copies, deletes, rolls back, or garbage-collects a state target. If one machine needs its pyenv state on a larger disk, bind that path to a portable name with `homeworld state bind` and link the name instead.
+In this setup, Homeworld owns the links, but not the data itself. It never copies, deletes, rolls back, or garbage-collects a state target. If one machine needs its pyenv state on a larger disk, you can bind that path to a portable name with `homeworld state bind` and link the name instead.
 
-Plugins need the same decision. If every machine should have the same plugin code, pin each plugin as a repo and link it under `$HOME/.pyenv/plugins/<name>`. If a plugin manager owns that directory, make it state instead; it will work, but plugin contents become machine-local rather than something Homeworld keeps identical.
+Plugins, need the same decision. If every machine should have the same plugin code, pin each plugin as a repo and link it under `$HOME/.pyenv/plugins/<name>`. If a plugin manager owns that directory, make it state instead; it will work, but plugin contents become machine-local rather than something Homeworld keeps identical.
 
-That split shows up everywhere in Homeworld: repos and assets are things it can rebuild, while state is data it only points at. Homeworld can throw away old environments because your data was never inside them.
+This split shows up everywhere in Homeworld: repos and assets are things it can rebuild, while state is data it only points at. Homeworld can throw away old environments because your data was never inside them.
 
 ## The Generation Guarantee
 
@@ -283,7 +283,7 @@ Only when the entire build succeeds does Homeworld **activate** the new generati
 homeworld generation rollback     # the previous environment, back, atomically
 ```
 
-The practical result:
+The practical result is that:
 
 * **A failed build changes nothing.** The generation you were using stays active; the broken one is discarded. There is no "died halfway through the setup script" state.
 * **Interruption is recoverable.** Activation writes a journal before it mutates anything. Kill the process mid-swap — `Ctrl-C`, `kill`, a dropped SSH session — and the next Homeworld command finds the journal and finishes or reverses the transaction automatically. No repair command exists because none is needed.
@@ -309,7 +309,7 @@ homeworld doctor                           # check for common problems
 
 ## Where Another Tool Fits Better
 
-Homeworld sits between symlink managers and full declarative systems. Depending on what you need, a different starting point may serve you better:
+Homeworld sits somwhere between symlink managers and full declarative systems. Depending on what you need, a different starting point may serve you better:
 
 | Need | Better starting point |
 |---|---|
@@ -325,7 +325,7 @@ This table is mostly about what each tool gives you out of the box. Chezmoi has 
 
 ## Guarantees — and Their Limits
 
-Here is the line Homeworld tries not to cross.
+Homeworld is pretty explicit about what it does or does not guarantee.
 
 **What Homeworld promises:**
 
@@ -342,7 +342,7 @@ Here is the line Homeworld tries not to cross.
 * **Power-loss durability isn't claimed.** Portable POSIX shell has no reliable cross-platform `fsync`. Homeworld uses temp files and atomic renames, but makes no promises about kernel panics or storage-controller reordering.
 * **Setup repositories are trusted code.** Manifests and `install.sh` run with your privileges. Pin repos you trust; read modules you didn't write.
 
-The [full reference](docs/README.md) has the narrower details, including how symlink replacement works on each platform.
+These promises and guarentees will evolve over future versions of Homeworld, these only reflect the current state. The [full reference](docs/README.md) has the indepth details, including how symlink replacement works on each platform.
 
 ## Documentation & Support
 
