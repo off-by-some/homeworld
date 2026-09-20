@@ -36,6 +36,34 @@ assert_eq "$(cat "$_T_TMP/external")" one "old binding restored"
 assert_no_path "$(hw_transaction_dir)" "journal removed after repair"
 teardown_env
 
+section "torn operation record self-heals during repair"
+setup_env
+module_root="$_T_TMP/module"; mkdir -p "$module_root/config"; printf one > "$module_root/config/file"
+HOMEWORLD_MODULE_ROOT="$module_root"; export HOMEWORLD_MODULE_ROOT
+one=$(hw_gen_new); hw_config_add config/file file "$one" mod; hw_config_link file "$_T_TMP/external" mod "$one"; hw_gen_write_meta "$one" linux test '' mod; hw_gen_activate "$one"
+printf two > "$module_root/config/file"
+two=$(hw_gen_new); hw_config_add config/file file "$two" mod; hw_config_link file "$_T_TMP/external" mod "$two"; hw_gen_write_meta "$two" linux test '' mod
+# Interrupt hw_transaction_record for the config-link operation between
+# writing action/destination/new-target and old-kind/old-target — the exact
+# gap that left a torn entry during the real incident this test guards
+# against (a SIGINT landing there previously made repair hw_die instead of
+# self-healing, since a torn entry means the destination was never touched).
+(
+    HW_TEST_INTERRUPT_AT=after-record-fields
+    export HW_TEST_INTERRUPT_AT
+    hw_gen_activate "$two"
+) >/dev/null 2>&1
+code=$?
+assert_nonzero "$code" "activation interrupted mid-record"
+_htrl_op="$(hw_transaction_dir)/operations/000001"
+assert_no_path "$_htrl_op/old-kind" "torn record has no old-kind"
+(hw_transaction_repair) >/dev/null 2>&1
+assert_0 "$?" "repair self-heals instead of dying"
+assert_eq "$(readlink "$(hw_current)")" "$one" "current rolled back"
+assert_eq "$(cat "$_T_TMP/external")" one "binding transparently restored via current"
+assert_no_path "$(hw_transaction_dir)" "journal removed after repair"
+teardown_env
+
 section "journal schema is validated"
 setup_env
 mkdir -p "$(hw_transaction_dir)"

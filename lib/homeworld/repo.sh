@@ -362,9 +362,19 @@ hw_repo_gc_locked() {
             _hrgc_sha=$(basename "$_hrgc_checkout")
             if ! grep -qxF "$_hrgc_id/$_hrgc_sha" "$_hrgc_live"; then
                 chmod -R u+w "$_hrgc_checkout" 2>/dev/null || true
-                rm -rf "$_hrgc_checkout" || hw_die \
-                    "could not remove unused repository checkout: $_hrgc_checkout" \
-                    "Check for files created by containers or elevated tools inside Homeworld checkouts."
+                # A checkout can pick up root-owned files from a container
+                # that bind-mounted it and ran as root (common for Docker
+                # modules). GC already ran after this generation was
+                # successfully activated, so failing to remove disposable,
+                # already-unreferenced cache data must not be fatal to the
+                # install that just succeeded — warn and leave it for a
+                # manual `sudo rm -rf`, or the next GC pass, instead.
+                if ! rm -rf "$_hrgc_checkout" 2>/dev/null; then
+                    hw_warn "could not remove unused repository checkout: $_hrgc_checkout"
+                    hw_log "  This is likely owned by root (e.g. left behind by a container"
+                    hw_log "  that bind-mounted it). Remove it manually with:"
+                    hw_log "    sudo rm -rf '$_hrgc_checkout'"
+                fi
             fi
         done
         hw_lock_release "$_hrgc_lock"

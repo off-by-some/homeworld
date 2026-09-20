@@ -40,6 +40,7 @@ hw_transaction_record() {
     hw_atomic_write "$_htr_dir/action" "$_htr_action"
     hw_atomic_write "$_htr_dir/destination" "$_htr_dest"
     hw_atomic_write "$_htr_dir/new-target" "$_htr_new_target"
+    hw_test_interrupt after-record-fields
     if [ -L "$_htr_dest" ]; then
         hw_atomic_write "$_htr_dir/old-kind" symlink
         hw_atomic_write "$_htr_dir/old-target" "$(readlink "$_htr_dest")"
@@ -66,6 +67,11 @@ hw_transaction_restore_operation() {
     _htro_dir=$1
     [ -d "$_htro_dir" ] || return 0
     _htro_dest=$(cat "$_htro_dir/destination" 2>/dev/null) || return 1
+    # hw_transaction_record writes action/destination/new-target before
+    # old-kind/old-target. A SIGINT landing in that exact gap leaves an entry
+    # with no old-kind — which means the destination was never touched by
+    # this transaction in the first place, so there is nothing to restore.
+    [ -f "$_htro_dir/old-kind" ] || return 0
     _htro_kind=$(cat "$_htro_dir/old-kind" 2>/dev/null) || return 1
     case "$_htro_kind" in
         missing)

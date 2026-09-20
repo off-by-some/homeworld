@@ -522,9 +522,16 @@ cmd_install() {
     hw_transaction_repair_locked
 
     # Install packages before module hooks. Package-manager changes remain
-    # outside Homeworld's rollback boundary.
+    # outside Homeworld's rollback boundary. A failure here (bad sudo
+    # password, Ctrl+C, network) must stop the install — proceeding to build
+    # and activate a generation on top of a package set that never actually
+    # got installed is worse than just stopping.
     if [ -s "$_ci_pkg_file" ] && [ -n "${_ci_provider:-}" ]; then
-        hw_install_packages "$_ci_provider" "$_ci_pkg_file"
+        hw_install_packages "$_ci_provider" "$_ci_pkg_file" || {
+            rm -f "$_ci_pkg_file"
+            hw_die "package installation failed" \
+                   "Fix the issue above (e.g. re-run with a valid sudo password), then run 'homeworld install' again."
+        }
     fi
     rm -f "$_ci_pkg_file"
 

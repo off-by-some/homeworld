@@ -128,3 +128,28 @@ assert_eq "$(cat "$_T_TMP/home/.pyenv/versions/marker")" persistent "nested pers
 checkout=$(cd "$(hw_data_dir)/current/repos/pyenv" && pwd -P)
 assert_no_path "$checkout/versions" "install does not modify immutable checkout"
 teardown_cli_env
+
+section "failed package installation stops the install"
+setup_cli_env
+# Fake sudo/pacman on PATH ahead of anything real, so this is hermetic across
+# every platform the suite runs on (some have apt/dnf/brew instead, or no
+# package manager at all in a bare container). The fake pacman always fails,
+# simulating a bad sudo password or an interrupted package install.
+fakebin="$_T_TMP/fakebin"; mkdir -p "$fakebin"
+printf '#!/bin/sh\nexec "$@"\n' > "$fakebin/sudo"; chmod +x "$fakebin/sudo"
+printf '#!/bin/sh\nprintf "pacman: simulated failure\\n" >&2\nexit 1\n' > "$fakebin/pacman"
+chmod +x "$fakebin/pacman"
+source_dir="$_T_TMP/source"; make_module "$source_dir" root
+mkdir -p "$source_dir/packages"; printf 'some-package\n' > "$source_dir/packages/pacman.txt"
+marker="$_T_TMP/install-ran"
+cat > "$source_dir/install.sh" <<EOF2
+#!/bin/sh
+: > "$marker"
+EOF2
+chmod +x "$source_dir/install.sh"
+PATH="$fakebin:$PATH" hw_cli init "$source_dir" >"$_T_TMP/out" 2>&1
+assert_nonzero "$?" "install fails when package installation fails"
+assert_contains "$_T_TMP/out" "package installation failed" "reports the right error"
+assert_no_path "$marker" "module install.sh never ran"
+assert_no_path "$(hw_data_dir)/current" "no generation activated"
+teardown_cli_env
