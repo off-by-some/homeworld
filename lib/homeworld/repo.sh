@@ -227,7 +227,7 @@ hw_repo_checkout_locked() {
 hw_repo_manifest_dir() { printf '%s/.homeworld/repo-manifest' "$1"; }
 
 hw_repo_record() {
-    _hrr_ns=$1; _hrr_source=$2; _hrr_id=$3; _hrr_mode=$4; _hrr_ref=$5; _hrr_sha=$6; _hrr_gen=$7
+    _hrr_ns=$1; _hrr_source=$2; _hrr_id=$3; _hrr_mode=$4; _hrr_ref=$5; _hrr_sha=$6; _hrr_gen=$7; _hrr_module=${8:-}
     _hrr_root=$(hw_repo_manifest_dir "$_hrr_gen")
     mkdir -p "$_hrr_root"
     [ -f "$_hrr_root/schema-version" ] || hw_schema_write "$_hrr_root"
@@ -241,6 +241,7 @@ hw_repo_record() {
     hw_atomic_write "$_hrr_tmp/ref-mode" "$_hrr_mode"
     hw_atomic_write "$_hrr_tmp/ref" "$_hrr_ref"
     hw_atomic_write "$_hrr_tmp/sha" "$_hrr_sha"
+    hw_atomic_write "$_hrr_tmp/module" "$_hrr_module"
     rm -rf "$_hrr_dir"
     mv "$_hrr_tmp" "$_hrr_dir" || hw_die "cannot record repository realization"
 }
@@ -254,7 +255,7 @@ hw_repo_gen_link() {
 }
 
 hw_repo_add_to_gen() {
-    _hrag_source_input=$1; _hrag_ns=$2; _hrag_gen=$3; _hrag_ref_input=${4:-}
+    _hrag_source_input=$1; _hrag_ns=$2; _hrag_gen=$3; _hrag_ref_input=${4:-}; _hrag_module=${5:-}
     hw_validate_name "$_hrag_ns" "repository namespace"
     _hrag_source=$(hw_repo_canonical_source "$_hrag_source_input") || hw_die "invalid repository source"
     _hrag_id=$(hw_repo_source_id "$_hrag_source")
@@ -296,7 +297,7 @@ hw_repo_add_to_gen() {
         hw_die "could not create repository checkout"
     }
     hw_repo_gen_link "$_hrag_ns" "$_hrag_id" "$_hrag_sha" "$_hrag_gen"
-    hw_repo_record "$_hrag_ns" "$_hrag_source" "$_hrag_id" "$_hrag_mode" "$_hrag_ref" "$_hrag_sha" "$_hrag_gen"
+    hw_repo_record "$_hrag_ns" "$_hrag_source" "$_hrag_id" "$_hrag_mode" "$_hrag_ref" "$_hrag_sha" "$_hrag_gen" "$_hrag_module"
     hw_lock_release "$_hrag_lock"
 }
 
@@ -361,7 +362,9 @@ hw_repo_gc_locked() {
             _hrgc_sha=$(basename "$_hrgc_checkout")
             if ! grep -qxF "$_hrgc_id/$_hrgc_sha" "$_hrgc_live"; then
                 chmod -R u+w "$_hrgc_checkout" 2>/dev/null || true
-                rm -rf "$_hrgc_checkout"
+                rm -rf "$_hrgc_checkout" || hw_die \
+                    "could not remove unused repository checkout: $_hrgc_checkout" \
+                    "Check for files created by containers or elevated tools inside Homeworld checkouts."
             fi
         done
         hw_lock_release "$_hrgc_lock"

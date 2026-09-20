@@ -18,13 +18,24 @@ hw_gen_new() {
 }
 
 hw_gen_write_meta() {
-    _hwm_path=$1; _hwm_platform=$2; _hwm_distro=$3; _hwm_provider=$4; _hwm_modules=$5
+    _hwm_path=$1; _hwm_platform=$2; _hwm_distro=$3; _hwm_provider=$4; _hwm_modules=$5; _hwm_moddir=${6:-}
     _hwm_meta="$_hwm_path/.homeworld"
     hw_schema_write "$_hwm_meta"
     hw_atomic_write "$_hwm_meta/platform" "$_hwm_platform"
     hw_atomic_write "$_hwm_meta/distro" "$_hwm_distro"
     hw_atomic_write "$_hwm_meta/package-provider" "$_hwm_provider"
     printf '%s\n' $_hwm_modules > "$_hwm_meta/installed-modules"
+    # Modules that declare HOMEWORLD_MODULE_VERSION are recorded here so the
+    # next install can tell whether a module's declared inputs actually moved,
+    # instead of guessing from disk content (which can't see e.g. a floating
+    # git ref or a live hardware probe a module intentionally tracks).
+    : > "$_hwm_meta/module-versions"
+    if [ -n "$_hwm_moddir" ]; then
+        for _hwm_n in $_hwm_modules; do
+            _hwm_v=$(hw_module_get "$_hwm_moddir" "$_hwm_n" "version")
+            [ -n "$_hwm_v" ] && printf '%s\t%s\n' "$_hwm_n" "$_hwm_v" >> "$_hwm_meta/module-versions"
+        done
+    fi
     hw_atomic_write "$_hwm_meta/created-at" "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date)"
     _hwm_source=''; [ -f "$HW_STATE/source" ] && _hwm_source=$(cat "$HW_STATE/source")
     _hwm_rev=local

@@ -23,13 +23,24 @@ make_module "$_src" "full" \
 HOMEWORLD_DISTROS="manjaro ubuntu"
 HOMEWORLD_DEPENDS="base utils"
 HOMEWORLD_AUTO_INSTALL="false"
-HOMEWORLD_REQUIRES="1.2.0"'
+HOMEWORLD_REQUIRES="1.2.0"
+HOMEWORLD_MODULE_VERSION="3.1.4"'
 hw_module_load "$_src/.homeworld-module" "$_T_TMP/mdir" >/dev/null
 assert_eq "$(cat "$_T_TMP/mdir/full/platforms")"    "linux macos"   "platforms field"
 assert_eq "$(cat "$_T_TMP/mdir/full/distros")"      "manjaro ubuntu" "distros field"
 assert_eq "$(cat "$_T_TMP/mdir/full/depends")"      "base utils"    "depends field"
 assert_eq "$(cat "$_T_TMP/mdir/full/auto_install")" "false"         "auto_install field"
 assert_eq "$(cat "$_T_TMP/mdir/full/requires")"     "1.2.0"        "requires field"
+assert_eq "$(cat "$_T_TMP/mdir/full/version")"      "3.1.4"        "version field"
+teardown_env
+
+section "hw_module_load — version defaults to empty"
+
+setup_env
+_src="$_T_TMP/src"
+make_module "$_src" "unversioned"
+hw_module_load "$_src/.homeworld-module" "$_T_TMP/mdir" >/dev/null
+assert_eq "$(cat "$_T_TMP/mdir/unversioned/version")" "" "version field empty when undeclared"
 teardown_env
 
 section "hw_module_load — malformed manifests"

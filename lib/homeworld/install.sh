@@ -68,9 +68,105 @@ hw_install_packages() {
     esac
 }
 
+# hw_install_carry_forward prev_gen new_gen module_name
+# Reuse a module's resources from the previous generation verbatim instead of
+# re-running install.sh. Only called when the module's declared
+# HOMEWORLD_MODULE_VERSION is unchanged from the last successful install, so
+# this never has to guess whether anything drifted (a floating git ref, a
+# live hardware probe) — the module author's version bump is the only signal
+# that matters.
+hw_install_carry_forward() {
+    _hicf_prev=$1; _hicf_gen=$2; _hicf_name=$3
+
+    # Assets, config, and commands are already stored per-module inside the
+    # generation directory — a plain copy carries them forward intact.
+    for _hicf_kind in assets config commands; do
+        [ -d "$_hicf_prev/$_hicf_kind/$_hicf_name" ] || continue
+        mkdir -p "$_hicf_gen/$_hicf_kind"
+        rm -rf "$_hicf_gen/$_hicf_kind/$_hicf_name"
+        cp -R "$_hicf_prev/$_hicf_kind/$_hicf_name" "$_hicf_gen/$_hicf_kind/$_hicf_name"
+    done
+
+    # Regenerate command launchers so they point at this generation's copy.
+    if [ -d "$_hicf_gen/commands/$_hicf_name" ]; then
+        for _hicf_cmd_dir in "$_hicf_gen/commands/$_hicf_name"/*; do
+            [ -d "$_hicf_cmd_dir" ] || continue
+            hw_make_launcher "$_hicf_gen/bin/$(basename "$_hicf_cmd_dir")" "$_hicf_cmd_dir"
+        done
+    fi
+
+    # Repository manifest entries this module owns: copy the resolved
+    # source/sha verbatim (do not re-resolve the ref — that would silently
+    # start tracking upstream again even though the version didn't bump) and
+    # re-link the checkout into the new generation so it stays GC-reachable.
+    _hicf_manifest_src=$(hw_repo_manifest_dir "$_hicf_prev")
+    if [ -d "$_hicf_manifest_src" ]; then
+        for _hicf_entry in "$_hicf_manifest_src"/*; do
+            [ -d "$_hicf_entry" ] || continue
+            [ "$(cat "$_hicf_entry/module" 2>/dev/null)" = "$_hicf_name" ] || continue
+            _hicf_ns=$(basename "$_hicf_entry")
+            _hicf_manifest_dst=$(hw_repo_manifest_dir "$_hicf_gen")
+            mkdir -p "$_hicf_manifest_dst"
+            [ -f "$_hicf_manifest_dst/schema-version" ] || hw_schema_write "$_hicf_manifest_dst"
+            rm -rf "$_hicf_manifest_dst/$_hicf_ns"
+            cp -R "$_hicf_entry" "$_hicf_manifest_dst/$_hicf_ns"
+            _hicf_id=$(cat "$_hicf_manifest_dst/$_hicf_ns/source-id")
+            _hicf_sha=$(cat "$_hicf_manifest_dst/$_hicf_ns/sha")
+            hw_repo_gen_link "$_hicf_ns" "$_hicf_id" "$_hicf_sha" "$_hicf_gen"
+        done
+    fi
+
+    # Managed links (repo/config/asset/state link) this module recorded.
+    # Their directory key is a hash of dest|type|id|module alone, so a
+    # verbatim copy lands under the same key it would if re-declared today.
+    _hicf_links_src=$(hw_managed_links_dir "$_hicf_prev")
+    if [ -d "$_hicf_links_src" ]; then
+        _hicf_links_dst=$(hw_managed_links_dir "$_hicf_gen")
+        for _hicf_link in "$_hicf_links_src"/*; do
+            [ -d "$_hicf_link" ] || continue
+            [ "$(cat "$_hicf_link/module" 2>/dev/null)" = "$_hicf_name" ] || continue
+            mkdir -p "$_hicf_links_dst"
+            [ -f "$_hicf_links_dst/schema-version" ] || hw_schema_write "$_hicf_links_dst"
+            rm -rf "$_hicf_links_dst/$(basename "$_hicf_link")"
+            cp -R "$_hicf_link" "$_hicf_links_dst/$(basename "$_hicf_link")"
+        done
+        hw_projection_invalidate "$_hicf_gen"
+    fi
+}
+
+# hw_install_module_prev_version prev_gen module_name
+# Look up what version was recorded for this module the last time a
+# generation was fully built and activated. Empty if unknown.
+hw_install_module_prev_version() {
+    _himpv_prev=$1; _himpv_name=$2
+    _himpv_file="$_himpv_prev/.homeworld/module-versions"
+    [ -f "$_himpv_file" ] || return 0
+    while IFS="$(printf '\t')" read -r _himpv_n _himpv_v; do
+        [ "$_himpv_n" = "$_himpv_name" ] && printf '%s' "$_himpv_v" && return 0
+    done < "$_himpv_file"
+}
+
 hw_install_module() {
-    _him_moddir=$1; _him_name=$2; _him_gen=$3; _him_platform=$4; _him_distro=$5
+    _him_moddir=$1; _him_name=$2; _him_gen=$3; _him_platform=$4; _him_distro=$5; _him_force=${6:-0}
     _him_path=$(hw_module_get "$_him_moddir" "$_him_name" path)
+
+    # A module only participates in cache-skip if it declares a version. This
+    # keeps the behavior strictly opt-in: a module that never sets
+    # HOMEWORLD_MODULE_VERSION is always run, exactly like before this
+    # feature existed.
+    if [ "$_him_force" != "1" ]; then
+        _him_version=$(hw_module_get "$_him_moddir" "$_him_name" version)
+        if [ -n "$_him_version" ] && [ -L "$(hw_current)" ]; then
+            _him_prev=$(readlink "$(hw_current)")
+            _him_prev_version=$(hw_install_module_prev_version "$_him_prev" "$_him_name")
+            if [ -n "$_him_prev_version" ] && [ "$_him_prev_version" = "$_him_version" ]; then
+                hw_log "$(printf '  %sUP TO DATE%s  %s (version %s unchanged)' "$_HW_C_OK" "$_HW_C_RST" "$_him_name" "$_him_version")"
+                hw_install_carry_forward "$_him_prev" "$_him_gen" "$_him_name"
+                return 0
+            fi
+        fi
+    fi
+
     hw_log "  installing $_him_name..."
     hw_install_assets "$_him_moddir" "$_him_name" "$_him_gen"
     hw_install_commands "$_him_moddir" "$_him_name" "$_him_gen"

@@ -6,9 +6,9 @@
 # field gets its own file: moddir/<name>/path, moddir/<name>/platforms, etc.
 # This makes the representation simple and the individual field reads cheap.
 
-# The seven recognised manifest fields. Anything else starting with HOMEWORLD_
+# The recognised manifest fields. Anything else starting with HOMEWORLD_
 # is rejected, which catches typos before they silently do nothing.
-_HW_MODULE_KNOWN_FIELDS="HOMEWORLD_MODULE_NAME HOMEWORLD_DESCRIPTION HOMEWORLD_PLATFORMS HOMEWORLD_DISTROS HOMEWORLD_DEPENDS HOMEWORLD_AUTO_INSTALL HOMEWORLD_REQUIRES"
+_HW_MODULE_KNOWN_FIELDS="HOMEWORLD_MODULE_NAME HOMEWORLD_DESCRIPTION HOMEWORLD_PLATFORMS HOMEWORLD_DISTROS HOMEWORLD_DEPENDS HOMEWORLD_AUTO_INSTALL HOMEWORLD_REQUIRES HOMEWORLD_MODULE_VERSION"
 
 # hw_module_load manifest_path moddir
 # Source the manifest in a subshell, validate, and write field files.
@@ -31,11 +31,11 @@ hw_module_load() {
         # We'll exclude them from the unknown-field check.
         _pre_hw=$(set | grep '^HOMEWORLD_' | cut -d= -f1 | tr '\n' ' ')
 
-        # Clear all seven known fields so a missing field from a previous
+        # Clear all known fields so a missing field from a previous
         # module doesn't persist.
         unset HOMEWORLD_MODULE_NAME HOMEWORLD_DESCRIPTION HOMEWORLD_PLATFORMS \
               HOMEWORLD_DISTROS HOMEWORLD_DEPENDS HOMEWORLD_AUTO_INSTALL \
-              HOMEWORLD_REQUIRES 2>/dev/null || true
+              HOMEWORLD_REQUIRES HOMEWORLD_MODULE_VERSION 2>/dev/null || true
 
         # Source the manifest. Failure here exits the subshell; the parent
         # shell sees empty output and the caller detects the missing NAME.
@@ -50,6 +50,7 @@ hw_module_load() {
         printf 'DEPENDS=%s\n'      "${HOMEWORLD_DEPENDS:-}"
         printf 'AUTO_INSTALL=%s\n' "${HOMEWORLD_AUTO_INSTALL:-true}"
         printf 'REQUIRES=%s\n'     "${HOMEWORLD_REQUIRES:-}"
+        printf 'VERSION=%s\n'      "${HOMEWORLD_MODULE_VERSION:-}"
 
         # Report any HOMEWORLD_* vars that appeared after sourcing and were
         # not already present in the environment before sourcing.
@@ -77,7 +78,7 @@ hw_module_load() {
     if [ -n "$_hml_unknown" ]; then
         _hml_field="${_hml_unknown#UNKNOWN=}"
         hw_die "unknown manifest field '$_hml_field' in $_hml_manifest" \
-               "Valid fields: HOMEWORLD_MODULE_NAME, DESCRIPTION, PLATFORMS, DISTROS, DEPENDS, AUTO_INSTALL, REQUIRES."
+               "Valid fields: HOMEWORLD_MODULE_NAME, DESCRIPTION, PLATFORMS, DISTROS, DEPENDS, AUTO_INSTALL, REQUIRES, MODULE_VERSION."
     fi
 
     # Extract name and validate against required pattern
@@ -115,6 +116,8 @@ hw_module_load() {
     _hml_auto="${_hml_auto#AUTO_INSTALL=}"
     _hml_req=$(printf '%s\n' "$_hml_output" | grep '^REQUIRES=' | head -1)
     _hml_req="${_hml_req#REQUIRES=}"
+    _hml_ver=$(printf '%s\n' "$_hml_output" | grep '^VERSION=' | head -1)
+    _hml_ver="${_hml_ver#VERSION=}"
 
     hw_write_bytes "$_hml_dest/path" "$_hml_dir"
     hw_write_bytes "$_hml_dest/platforms" "$_hml_plat"
@@ -123,6 +126,7 @@ hw_module_load() {
     hw_write_bytes "$_hml_dest/auto_install" "${_hml_auto:-true}"
     hw_write_bytes "$_hml_dest/description" "$_hml_desc"
     hw_write_bytes "$_hml_dest/requires" "$_hml_req"
+    hw_write_bytes "$_hml_dest/version" "$_hml_ver"
 
     printf '%s\n' "$_hml_name"
 }

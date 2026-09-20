@@ -532,13 +532,14 @@ cmd_install() {
     hw_log ""
     hw_log "Building generation $(basename "$_ci_gen")..."
 
-    # Install each module in sorted order
+    # Install each module in sorted order. --reinstall bypasses the
+    # module-version cache and forces every module's install.sh to run.
     for _ci_n in $_ci_sorted; do
-        hw_install_module "$_ci_moddir" "$_ci_n" "$_ci_gen" "$_ci_platform" "${_ci_distro:-}"
+        hw_install_module "$_ci_moddir" "$_ci_n" "$_ci_gen" "$_ci_platform" "${_ci_distro:-}" "$_ci_reinstall"
     done
 
     # Write metadata before activation so it's part of the generation
-    hw_gen_write_meta "$_ci_gen" "$_ci_platform" "${_ci_distro:-}" "${_ci_provider:-}" "$_ci_sorted"
+    hw_gen_write_meta "$_ci_gen" "$_ci_platform" "${_ci_distro:-}" "${_ci_provider:-}" "$_ci_sorted" "$_ci_moddir"
 
     hw_log ""
     hw_log "Activating generation $(basename "$_ci_gen")..."
@@ -744,7 +745,7 @@ cmd_repo() {
             while [ $# -gt 0 ]; do
                 case "$1" in --ref) [ $# -ge 2 ] || hw_die "--ref requires a value"; _cr_ref=$2; shift 2 ;; *) hw_die "unknown repo add option: $1" ;; esac
             done
-            hw_repo_add_to_gen "$_cr_source" "$_cr_ns" "$HOMEWORLD_TARGET" "$_cr_ref"
+            hw_repo_add_to_gen "$_cr_source" "$_cr_ns" "$HOMEWORLD_TARGET" "$_cr_ref" "$HOMEWORLD_MODULE_NAME"
             ;;
         link)
             _hw_install_context "homeworld repo link"
